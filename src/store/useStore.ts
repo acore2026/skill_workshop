@@ -1,11 +1,21 @@
 import { create } from 'zustand';
-import { autoLayoutDocument, createStarterDocument, validateDocument as runValidation } from '../lib/graph';
-import type { SkillDocument, SkillEdge, SkillNode } from '../schemas/skill';
+import { v4 as uuidv4 } from 'uuid';
+import {
+  CASE_LIBRARY,
+  autoLayoutDocument,
+  createCardNode,
+  createStarterDocument,
+  createEdgeFromPorts,
+  getExecutionOrder,
+  validateDocument as runValidation,
+} from '../lib/graph';
+import { runSkillGenerator } from '../lib/skillGenerator';
+import type { CardType, SkillDocument, SkillEdge, SkillNode } from '../schemas/skill';
 import type { StatusType } from '../components/StatusPill';
 
 export interface ToolCall {
   name: string;
-  args: Record<string, string>;
+  args: Record<string, unknown>;
 }
 
 export interface SkillInstall {
@@ -26,6 +36,12 @@ export interface ChatMessage {
 export type SidebarTab = 'outline' | 'library';
 export type UtilityTab = 'log' | 'validation' | 'search' | 'trace';
 
+interface PromptResult {
+  summary: string;
+  toolCallName: string;
+  model: string;
+}
+
 interface AppState {
   document: SkillDocument | null;
   appState: StatusType;
@@ -42,6 +58,10 @@ interface AppState {
   requestFitView: () => void;
   runMockExecution: () => void;
   resetExecution: () => void;
+  applyAgentPrompt: (prompt: string) => PromptResult;
+  applyUpdateSkillToolCall: (args: { name: string; description: string; operations: Array<{ type: 'replace_document'; document: SkillDocument }> }) => void;
+  addCaseToDocument: (caseId: string) => void;
+  addCardOfType: (cardType: CardType) => void;
   setAppState: (state: StatusType) => void;
   selectNode: (id: string | null) => void;
   selectEdge: (id: string | null) => void;
@@ -50,9 +70,9 @@ interface AppState {
   addMessage: (message: ChatMessage) => void;
   clearMessages: () => void;
   updateNode: (id: string, updates: Partial<SkillNode>) => void;
-  addNode: (node: SkillNode) => void;
   removeNode: (id: string) => void;
   addEdge: (edge: SkillEdge) => void;
+  connectPorts: (sourcePortId: string, targetPortId: string) => void;
   updateEdge: (id: string, updates: Partial<SkillEdge>) => void;
   removeEdge: (id: string) => void;
 }
@@ -69,7 +89,7 @@ const appendTimeline = (
     timeline: [
       ...document.execution.timeline,
       {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         level,
         message,
         nodeId,
@@ -110,21 +130,19 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       const result = runValidation(state.document);
-      const document = appendTimeline(
-        {
-          ...state.document,
-          validation: {
-            errors: result.errors,
-            warnings: result.warnings,
-            lastValidatedAt: new Date().toISOString(),
-          },
-        },
-        result.errors.length > 0 ? 'Validation finished with blocking errors.' : 'Validation finished successfully.',
-        result.errors.length > 0 ? 'warning' : 'success',
-      );
-
       return {
-        document,
+        document: appendTimeline(
+          {
+            ...state.document,
+            validation: {
+              errors: result.errors,
+              warnings: result.warnings,
+              lastValidatedAt: new Date().toISOString(),
+            },
+          },
+          result.errors.length > 0 ? 'Validation found invalid action-card links.' : 'Validation passed for the action-card flow.',
+          result.errors.length > 0 ? 'warning' : 'success',
+        ),
         appState: result.errors.length > 0 ? 'error' : 'ready_to_run',
         utilityTab: 'validation',
       };
@@ -135,9 +153,8 @@ export const useStore = create<AppState>((set, get) => ({
       if (!state.document) {
         return state;
       }
-
       return {
-        document: appendTimeline(autoLayoutDocument(state.document), 'Applied auto layout.', 'info'),
+        document: appendTimeline(autoLayoutDocument(state.document), 'Applied card auto layout.', 'info'),
         appState: 'editing',
       };
     }),
@@ -150,6 +167,7 @@ export const useStore = create<AppState>((set, get) => ({
       return;
     }
 
+    const ordered = getExecutionOrder(current);
     const statuses = Object.fromEntries(current.nodes.map((node) => [node.id, 'pending' as const]));
 
     set({
@@ -163,18 +181,16 @@ export const useStore = create<AppState>((set, get) => ({
             nodeStatuses: statuses,
           },
         },
-        'Starting mock execution.',
-        'info',
+        'Starting mock execution over next-action links.',
       ),
     });
 
-    current.nodes.forEach((node, index) => {
+    ordered.forEach((node, index) => {
       window.setTimeout(() => {
         set((state) => {
           if (!state.document) {
             return state;
           }
-
           return {
             document: appendTimeline(
               {
@@ -187,22 +203,21 @@ export const useStore = create<AppState>((set, get) => ({
                   },
                 },
               },
-              `Executing ${node.title}.`,
+              `Running ${node.title}.`,
               'info',
               node.id,
             ),
           };
         });
-      }, index * 650);
+      }, index * 700);
 
       window.setTimeout(() => {
         set((state) => {
           if (!state.document) {
             return state;
           }
-
-          const isLast = index === current.nodes.length - 1;
-
+          const terminalStatus = node.cardType === 'failure' ? 'error' : 'success';
+          const isLast = index === ordered.length - 1;
           return {
             document: appendTimeline(
               {
@@ -212,18 +227,18 @@ export const useStore = create<AppState>((set, get) => ({
                   lastRun: isLast ? new Date().toISOString() : state.document.execution.lastRun,
                   nodeStatuses: {
                     ...state.document.execution.nodeStatuses,
-                    [node.id]: 'success',
+                    [node.id]: terminalStatus,
                   },
                 },
               },
-              `${node.title} completed.`,
-              'success',
+              `${node.title} completed as ${terminalStatus}.`,
+              terminalStatus === 'error' ? 'warning' : 'success',
               node.id,
             ),
-            appState: isLast ? 'run_complete' : state.appState,
+            appState: isLast ? (terminalStatus === 'error' ? 'error' : 'run_complete') : state.appState,
           };
         });
-      }, index * 650 + 350);
+      }, index * 700 + 350);
     });
   },
 
@@ -232,7 +247,6 @@ export const useStore = create<AppState>((set, get) => ({
       if (!state.document) {
         return state;
       }
-
       return {
         document: appendTimeline(
           {
@@ -244,24 +258,89 @@ export const useStore = create<AppState>((set, get) => ({
             },
           },
           'Execution state reset.',
-          'info',
         ),
         appState: 'editing',
       };
     }),
 
+  applyAgentPrompt: (prompt) => {
+    const current = get().document;
+    const completion = runSkillGenerator({ prompt, currentSkill: current });
+    const choice = completion.choices[0];
+    const toolCall = choice.message.tool_calls[0];
+    get().applyUpdateSkillToolCall(toolCall.function.arguments);
+
+    return {
+      summary: choice.message.content,
+      toolCallName: toolCall.function.name,
+      model: completion.model,
+    };
+  },
+
+  applyUpdateSkillToolCall: (args) =>
+    set((state) => {
+      const replace = args.operations.find((operation) => operation.type === 'replace_document');
+      if (!replace) {
+        return state;
+      }
+      return {
+        document: appendTimeline(
+          replace.document,
+          `Applied update_skill tool call: ${args.description}`,
+          'success',
+        ),
+        appState: 'draft_ready',
+        utilityTab: 'log',
+        fitViewVersion: state.fitViewVersion + 1,
+      };
+    }),
+
+  addCaseToDocument: (caseId) => {
+    const current = get().document;
+    const promptSeed = CASE_LIBRARY.find((item) => item.id === caseId)?.title ?? caseId;
+    const completion = runSkillGenerator({ prompt: promptSeed, currentSkill: current });
+    const toolCall = completion.choices[0]?.message.tool_calls[0];
+    if (toolCall) {
+      get().applyUpdateSkillToolCall(toolCall.function.arguments);
+    }
+    set({ sidebarTab: 'outline' });
+  },
+
+  addCardOfType: (cardType) =>
+    set((state) => {
+      if (!state.document) {
+        return state;
+      }
+      const column = state.document.nodes.length % 3;
+      const row = Math.floor(state.document.nodes.length / 3);
+      const node = createCardNode(cardType, {
+        x: 180 + column * 360,
+        y: 140 + row * 250,
+      });
+      return {
+        document: appendTimeline(
+          {
+            ...state.document,
+            nodes: [...state.document.nodes, node],
+          },
+          `Added ${cardType} card.`,
+          'info',
+          node.id,
+        ),
+        selectedNodeId: node.id,
+        selectedEdgeId: null,
+        fitViewVersion: state.fitViewVersion + 1,
+        utilityTab: 'log',
+        appState: 'editing',
+      };
+    }),
+
   setAppState: (appState) => set({ appState }),
-
   selectNode: (id) => set({ selectedNodeId: id, selectedEdgeId: null }),
-
   selectEdge: (id) => set({ selectedEdgeId: id, selectedNodeId: null }),
-
   setSidebarTab: (sidebarTab) => set({ sidebarTab }),
-
   setUtilityTab: (utilityTab) => set({ utilityTab }),
-
   addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
-
   clearMessages: () => set({ messages: [] }),
 
   updateNode: (id, updates) =>
@@ -269,7 +348,6 @@ export const useStore = create<AppState>((set, get) => ({
       if (!state.document) {
         return state;
       }
-
       return {
         document: {
           ...state.document,
@@ -280,51 +358,24 @@ export const useStore = create<AppState>((set, get) => ({
       };
     }),
 
-  addNode: (node) =>
-    set((state) => {
-      if (!state.document) {
-        return state;
-      }
-
-      return {
-        document: appendTimeline(
-          {
-            ...state.document,
-            nodes: [...state.document.nodes, node],
-          },
-          `Added node ${node.title}.`,
-          'info',
-          node.id,
-        ),
-        selectedNodeId: node.id,
-        selectedEdgeId: null,
-        appState: 'editing',
-      };
-    }),
-
   removeNode: (id) =>
     set((state) => {
       if (!state.document) {
         return state;
       }
-
       return {
         document: appendTimeline(
           {
             ...state.document,
             nodes: state.document.nodes.filter((node) => node.id !== id),
             edges: state.document.edges.filter((edge) => edge.fromNodeId !== id && edge.toNodeId !== id),
-            groups: state.document.groups.map((group) => ({
-              ...group,
-              childNodeIds: group.childNodeIds.filter((nodeId) => nodeId !== id),
-            })),
           },
-          `Removed node ${id}.`,
+          `Removed card ${id}.`,
           'warning',
           id,
         ),
         selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
-        appState: 'editing',
+        selectedEdgeId: null,
       };
     }),
 
@@ -333,14 +384,38 @@ export const useStore = create<AppState>((set, get) => ({
       if (!state.document) {
         return state;
       }
-
       return {
         document: appendTimeline(
           {
             ...state.document,
             edges: [...state.document.edges, edge],
           },
-          'Connected pins.',
+          edge.edgeType === 'data' ? 'Linked outputs to inputs.' : 'Linked next action path.',
+          'success',
+          edge.toNodeId,
+        ),
+        selectedEdgeId: edge.id,
+      };
+    }),
+
+  connectPorts: (sourcePortId, targetPortId) =>
+    set((state) => {
+      if (!state.document) {
+        return state;
+      }
+      const edge = createEdgeFromPorts(state.document, sourcePortId, targetPortId);
+      if (!edge) {
+        return {
+          document: appendTimeline(state.document, 'Rejected an invalid card link.', 'warning'),
+        };
+      }
+      return {
+        document: appendTimeline(
+          {
+            ...state.document,
+            edges: [...state.document.edges, edge],
+          },
+          edge.edgeType === 'data' ? 'Added data link.' : 'Added next action link.',
           'success',
           edge.toNodeId,
         ),
@@ -353,7 +428,6 @@ export const useStore = create<AppState>((set, get) => ({
       if (!state.document) {
         return state;
       }
-
       return {
         document: {
           ...state.document,
@@ -368,14 +442,13 @@ export const useStore = create<AppState>((set, get) => ({
       if (!state.document) {
         return state;
       }
-
       return {
         document: appendTimeline(
           {
             ...state.document,
             edges: state.document.edges.filter((edge) => edge.id !== id),
           },
-          `Removed edge ${id}.`,
+          `Removed link ${id}.`,
           'warning',
         ),
         selectedEdgeId: state.selectedEdgeId === id ? null : state.selectedEdgeId,

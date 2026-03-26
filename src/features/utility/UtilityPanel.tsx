@@ -12,15 +12,7 @@ const tabs = [
 ] as const;
 
 const UtilityPanel: React.FC = () => {
-  const {
-    document,
-    utilityTab,
-    setUtilityTab,
-    runMockExecution,
-    resetExecution,
-    validateDocument,
-    appState,
-  } = useStore();
+  const { document, utilityTab, setUtilityTab, runMockExecution, resetExecution, validateDocument, appState } = useStore();
   const [query, setQuery] = useState('');
 
   const searchResults = useMemo(() => {
@@ -29,12 +21,13 @@ const UtilityPanel: React.FC = () => {
     }
 
     const q = query.toLowerCase();
-
     return document.nodes.filter(
       (node) =>
         node.title.toLowerCase().includes(q) ||
-        (node.subtitle ?? '').toLowerCase().includes(q) ||
-        [...node.inputs, ...node.outputs].some((pin) => pin.name.toLowerCase().includes(q)),
+        node.summary.toLowerCase().includes(q) ||
+        node.cardType.toLowerCase().includes(q) ||
+        [...node.inputs, ...node.outputs].some((port) => port.name.toLowerCase().includes(q)) ||
+        node.nextActions.some((port) => port.label.toLowerCase().includes(q)),
     );
   }, [document, query]);
 
@@ -47,12 +40,7 @@ const UtilityPanel: React.FC = () => {
       <div className="utility-toolbar">
         <div className="utility-tabs">
           {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={utilityTab === tab.id ? 'is-active' : ''}
-              onClick={() => setUtilityTab(tab.id)}
-            >
+            <button key={tab.id} type="button" className={utilityTab === tab.id ? 'is-active' : ''} onClick={() => setUtilityTab(tab.id)}>
               {tab.label}
             </button>
           ))}
@@ -122,21 +110,21 @@ const UtilityPanel: React.FC = () => {
           <div className="utility-search">
             <label className="utility-search-box">
               <Search size={14} />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search nodes and pins" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search cards, lanes, or case terms" />
             </label>
             <div className="utility-list">
               {!query.trim() ? (
                 <div className="utility-empty">Enter a query to search the graph.</div>
               ) : searchResults.length === 0 ? (
-                <div className="utility-empty">No graph objects matched that query.</div>
+                <div className="utility-empty">No action cards matched that query.</div>
               ) : (
                 searchResults.map((node) => (
                   <div key={node.id} className="utility-entry">
                     <div className="utility-entry-head">
                       <span>{node.title}</span>
-                      <span>{node.type}</span>
+                      <span>{node.cardType}</span>
                     </div>
-                    <div>{[...node.inputs, ...node.outputs].map((pin) => pin.name).join(', ')}</div>
+                    <div>{[...node.inputs.map((port) => port.name), ...node.outputs.map((port) => port.name), ...node.nextActions.map((port) => port.label)].join(', ')}</div>
                   </div>
                 ))
               )}
@@ -150,7 +138,7 @@ const UtilityPanel: React.FC = () => {
               <div key={node.id} className="trace-row">
                 <div>
                   <div className="trace-title">{node.title}</div>
-                  <div className="trace-meta">{node.type}</div>
+                  <div className="trace-meta">{node.cardType}</div>
                 </div>
                 <span className={`trace-status ${document.execution.nodeStatuses[node.id] ?? 'idle'}`}>
                   {document.execution.nodeStatuses[node.id] ?? 'idle'}

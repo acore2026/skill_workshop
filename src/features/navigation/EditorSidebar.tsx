@@ -1,17 +1,16 @@
 import React from 'react';
 import { Boxes, FileStack, Plus, Sparkles } from 'lucide-react';
 import Button from '../../components/Button';
-import { NODE_LIBRARY, createNodeFromTemplate } from '../../lib/graph';
+import { CARD_LIBRARY, CASE_LIBRARY } from '../../lib/graph';
 import { useStore } from '../../store/useStore';
 import type { SkillNode } from '../../schemas/skill';
 import './EditorSidebar.css';
 
-const groupNodes = (nodes: SkillNode[]) =>
+const groupCards = (nodes: SkillNode[]) =>
   Object.entries(
     nodes.reduce<Record<string, SkillNode[]>>((acc, node) => {
-      const key = node.type.replace('_', ' ');
-      acc[key] = acc[key] ?? [];
-      acc[key].push(node);
+      acc[node.cardType] = acc[node.cardType] ?? [];
+      acc[node.cardType].push(node);
       return acc;
     }, {}),
   );
@@ -23,45 +22,22 @@ const EditorSidebar: React.FC = () => {
     setSidebarTab,
     selectedNodeId,
     selectNode,
-    addNode,
+    addCardOfType,
+    addCaseToDocument,
   } = useStore();
 
   if (!document) {
     return null;
   }
 
-  const handleAddNode = (templateId: string) => {
-    const template = NODE_LIBRARY.find((item) => item.id === templateId);
-    if (!template) {
-      return;
-    }
-
-    const column = document.nodes.length % 3;
-    const row = Math.floor(document.nodes.length / 3);
-    addNode(
-      createNodeFromTemplate(template, {
-        x: 220 + column * 240,
-        y: 140 + row * 180,
-      }),
-    );
-  };
-
   return (
     <div className="editor-sidebar">
       <div className="editor-sidebar-tabs">
-        <button
-          type="button"
-          className={sidebarTab === 'outline' ? 'is-active' : ''}
-          onClick={() => setSidebarTab('outline')}
-        >
+        <button type="button" className={sidebarTab === 'outline' ? 'is-active' : ''} onClick={() => setSidebarTab('outline')}>
           <FileStack size={14} />
           Outline
         </button>
-        <button
-          type="button"
-          className={sidebarTab === 'library' ? 'is-active' : ''}
-          onClick={() => setSidebarTab('library')}
-        >
+        <button type="button" className={sidebarTab === 'library' ? 'is-active' : ''} onClick={() => setSidebarTab('library')}>
           <Boxes size={14} />
           Library
         </button>
@@ -73,18 +49,18 @@ const EditorSidebar: React.FC = () => {
             <div className="sidebar-section-label">Graph</div>
             <div className="graph-summary-card">
               <div className="graph-summary-title">{document.name}</div>
-              <div className="graph-summary-meta">{document.type.replace('_', ' ')}</div>
+              <div className="graph-summary-meta">{document.metadata.executionMode}</div>
               <div className="graph-summary-stats">
-                <span>{document.nodes.length} nodes</span>
-                <span>{document.edges.length} wires</span>
-                <span>{document.groups.length} groups</span>
+                <span>{document.nodes.length} cards</span>
+                <span>{document.edges.length} links</span>
+                <span>{document.metadata.tags.length} tags</span>
               </div>
             </div>
           </section>
 
           <section className="sidebar-section">
-            <div className="sidebar-section-label">Nodes</div>
-            {groupNodes(document.nodes).map(([groupName, nodes]) => (
+            <div className="sidebar-section-label">Cards</div>
+            {groupCards(document.nodes).map(([groupName, nodes]) => (
               <div key={groupName} className="outline-group">
                 <div className="outline-group-title">{groupName}</div>
                 <div className="outline-list">
@@ -96,7 +72,7 @@ const EditorSidebar: React.FC = () => {
                       onClick={() => selectNode(node.id)}
                     >
                       <span>{node.title}</span>
-                      <span>{node.inputs.length + node.outputs.length} pins</span>
+                      <span>{node.inputs.length + node.outputs.length + node.nextActions.length} lanes</span>
                     </button>
                   ))}
                 </div>
@@ -105,12 +81,12 @@ const EditorSidebar: React.FC = () => {
           </section>
 
           <section className="sidebar-section">
-            <div className="sidebar-section-label">Comment Regions</div>
+            <div className="sidebar-section-label">Saved Flows</div>
             <div className="outline-list">
-              {document.groups.map((group) => (
-                <div key={group.id} className="outline-item static">
-                  <span>{group.title}</span>
-                  <span>{group.childNodeIds.length} nodes</span>
+              {CASE_LIBRARY.map((item) => (
+                <div key={item.id} className="outline-item static">
+                  <span>{item.title}</span>
+                  <span>{item.tags.join(', ')}</span>
                 </div>
               ))}
             </div>
@@ -119,25 +95,50 @@ const EditorSidebar: React.FC = () => {
       ) : (
         <div className="editor-sidebar-body library-mode">
           <section className="sidebar-section">
-            <div className="sidebar-section-label">Node Palette</div>
+            <div className="sidebar-section-label">Flow Templates</div>
             <div className="library-stack">
-              {NODE_LIBRARY.map((template) => (
+              {CASE_LIBRARY.map((item) => (
+                <div key={item.id} className="library-card">
+                  <div className="library-card-head">
+                    <div>
+                      <div className="library-card-title">{item.title}</div>
+                      <div className="library-card-subtitle">Template</div>
+                    </div>
+                    <span className="library-card-badge">{item.tags[0]}</span>
+                  </div>
+                  <p>{item.summary}</p>
+                  <div className="library-card-footer">
+                    <span>{item.cards.length} cards</span>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => addCaseToDocument(item.id)}>
+                      <Plus size={12} />
+                      Insert
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="sidebar-section">
+            <div className="sidebar-section-label">Card Palette</div>
+            <div className="library-stack">
+              {CARD_LIBRARY.map((template) => (
                 <div key={template.id} className="library-card">
                   <div className="library-card-head">
                     <div>
                       <div className="library-card-title">{template.title}</div>
-                      <div className="library-card-subtitle">{template.subtitle}</div>
+                      <div className="library-card-subtitle">{template.cardType}</div>
                     </div>
                     <span className="library-card-badge" style={{ backgroundColor: template.tint }}>
                       {template.badge}
                     </span>
                   </div>
-                  <p>{template.description}</p>
+                  <p>{template.summary}</p>
                   <div className="library-card-footer">
                     <span>
-                      {template.inputs.length} in / {template.outputs.length} out
+                      {template.inputs.length} inputs / {template.outputs.length} outputs / {template.nextActions.length} next
                     </span>
-                    <Button size="sm" variant="secondary" onClick={() => handleAddNode(template.id)}>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => addCardOfType(template.cardType)}>
                       <Plus size={12} />
                       Add
                     </Button>
@@ -148,10 +149,10 @@ const EditorSidebar: React.FC = () => {
           </section>
 
           <section className="sidebar-section tip-card">
-            <div className="sidebar-section-label">Workflow</div>
+            <div className="sidebar-section-label">Generator</div>
             <div className="tip-content">
               <Sparkles size={16} />
-              <span>Use Auto Layout after adding a few nodes to keep the graph readable.</span>
+              <span>Use the left generator to update the flow, or add cards directly from the canvas controls.</span>
             </div>
           </section>
         </div>

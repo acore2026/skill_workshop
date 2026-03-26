@@ -12,7 +12,7 @@
   align-items: flex-start;
   padding: 0.95rem 1rem;
   border-bottom: 1px solid var(--border-light);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(250, 251, 255, 0.92));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(250, 251, 255, 0.92));
 }
 
 .graph-editor-title {
@@ -30,6 +30,28 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+}
+
+.graph-editor-quick-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.graph-editor-quick-add button {
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-base);
+  background: white;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.graph-editor-quick-add button:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
 }
 
 .graph-editor-stats span {
@@ -53,6 +75,10 @@
   background:
     radial-gradient(circle at top left, rgba(96, 165, 250, 0.08), transparent 20%),
     linear-gradient(180deg, #f9fbff 0%, #f4f7fb 100%);
+}
+
+.react-flow__edge-path {
+  stroke-linecap: round;
 }
 
 .graph-controls {

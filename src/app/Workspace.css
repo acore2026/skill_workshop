@@ -4,9 +4,8 @@
   display: flex;
   flex-direction: column;
   background:
-    radial-gradient(circle at top left, rgba(96, 165, 250, 0.12), transparent 18%),
-    radial-gradient(circle at top right, rgba(14, 165, 233, 0.1), transparent 20%),
-    linear-gradient(180deg, #f8fbff 0%, #f3f6fb 100%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.96)),
+    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
   color: var(--text-primary);
 }
 
@@ -16,9 +15,9 @@
   align-items: center;
   gap: 1rem;
   padding: 0.95rem 1.1rem;
-  border-bottom: 1px solid rgba(214, 223, 236, 0.9);
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.95);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(12px);
 }
 
 .toolbar-brand,
@@ -35,9 +34,10 @@
 .brand-mark {
   width: 2.5rem;
   height: 2.5rem;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #0f172a 0%, #2563eb 100%);
-  color: white;
+  border-radius: 12px;
+  border: 1px solid rgba(191, 219, 254, 0.9);
+  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+  color: #1d4ed8;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -71,20 +71,21 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 310px minmax(0, 1fr) 340px;
+  grid-template-columns: 360px minmax(0, 1fr) 360px;
   gap: 1rem;
   padding: 1rem;
 }
 
 .workspace-sidebar,
-.workspace-inspector,
 .workspace-surface,
-.workspace-bottom-panel {
+.workspace-bottom-panel,
+.workspace-chat-panel,
+.workspace-inspector {
   min-height: 0;
-  border: 1px solid rgba(214, 223, 236, 0.95);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.06);
+  border: 1px solid rgba(226, 232, 240, 0.96);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
   overflow: hidden;
 }
 
@@ -95,16 +96,29 @@
   gap: 1rem;
 }
 
+.workspace-right-rail {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(340px, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+
 .workspace-inspector {
   padding: 1rem;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1440px) {
   .workspace-main {
-    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-columns: 320px minmax(0, 1fr) 320px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .workspace-main {
+    grid-template-columns: 320px minmax(0, 1fr);
   }
 
-  .workspace-inspector {
+  .workspace-right-rail {
     display: none;
   }
 }
@@ -120,7 +134,7 @@
 
   .workspace-main {
     grid-template-columns: 1fr;
-    grid-template-rows: 320px minmax(0, 1fr);
+    grid-template-rows: 360px minmax(0, 1fr);
   }
 
   .workspace-center {
