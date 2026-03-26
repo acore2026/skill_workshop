@@ -42,7 +42,7 @@ const AgentChatbox: React.FC = () => {
         role: 'assistant',
         content: `I've mapped your intent to an Agentic Skill Profile for: **${input}**. \n\nI've generated a Three-Stage Execution Pipeline with Service Directives. You can now validate the configuration or run a mock AgenticService-URI simulation in the orchestration dashboard.`,
         timestamp: new Date().toISOString(),
-        documentId: response.document.meta.id,
+        documentId: response.document.id,
         toolCalls: response.toolCalls,
         skillInstalls: response.skillInstalls,
       };

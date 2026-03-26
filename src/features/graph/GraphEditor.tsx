@@ -1,132 +1,189 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ReactFlow,
   Background,
+  BackgroundVariant,
   Controls,
-  addEdge as addFlowEdge,
-  useNodesState,
+  MarkerType,
+  ReactFlow,
   useEdgesState,
-  Panel,
+  useNodesState,
 } from '@xyflow/react';
-import type {
-  Connection,
-  Edge,
-  Node,
-  NodeMouseHandler,
-  EdgeMouseHandler,
-  OnNodeDrag,
-} from '@xyflow/react';
+import type { Connection, Edge, EdgeMouseHandler, Node, NodeMouseHandler, NodeTypes, OnNodeDrag, ReactFlowInstance } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { createEdgeFromPins } from '../../lib/graph';
+import type { SkillEdge, SkillNode, SkillPin } from '../../schemas/skill';
 import { useStore } from '../../store/useStore';
 import SkillNodeComponent from './SkillNodeComponent';
 import './GraphEditor.css';
 
-const nodeTypes = {
-  intent: SkillNodeComponent,
-  discovery: SkillNodeComponent,
-  skill: SkillNodeComponent,
-  directive: SkillNodeComponent,
-  execution: SkillNodeComponent,
+interface GraphNodeData {
+  title: string;
+  subtitle?: string;
+  type: SkillNode['type'];
+  badge?: string;
+  tint?: string;
+  inputs: SkillPin[];
+  outputs: SkillPin[];
+  status?: string;
+}
+
+const nodeTypes: NodeTypes = {
+  graphNode: SkillNodeComponent,
 };
 
-const GraphEditor: React.FC = () => {
-  const { document, selectNode, selectEdge, updateNode, addEdge } = useStore();
+const GraphCanvas: React.FC = () => {
+  const {
+    document,
+    fitViewVersion,
+    selectNode,
+    selectEdge,
+    updateNode,
+    addEdge,
+    removeEdge,
+  } = useStore();
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
 
-  const initialNodes = useMemo(() => 
-    document?.nodes.map((node) => ({
-      id: node.id,
-      type: node.type,
-      position: node.position,
-      data: { label: node.label, type: node.type },
-    })) || []
-  , [document?.nodes]);
+  const initialNodes = useMemo(
+    () =>
+      document?.nodes.map((node) => ({
+        id: node.id,
+        type: 'graphNode',
+        position: node.position,
+        data: {
+          title: node.title,
+          subtitle: node.subtitle,
+          type: node.type,
+          badge: node.uiState.badge,
+          tint: node.uiState.tint,
+          inputs: node.inputs,
+          outputs: node.outputs,
+          status: document.execution.nodeStatuses[node.id],
+        } satisfies GraphNodeData,
+      })) ?? [],
+    [document],
+  );
 
-  const initialEdges = useMemo(() => 
-    document?.edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      sourceHandle: edge.sourceHandle,
-      targetHandle: edge.targetHandle,
-    })) || []
-  , [document?.edges]);
+  const initialEdges = useMemo(
+    () =>
+      document?.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.fromNodeId,
+        sourceHandle: edge.fromPinId,
+        target: edge.toNodeId,
+        targetHandle: edge.toPinId,
+        label: edge.label,
+        animated: edge.style.animated,
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: {
+          stroke: edge.style.stroke,
+          strokeWidth: edge.edgeType === 'execution' ? 2.6 : 2,
+        },
+      })) ?? [],
+    [document],
+  );
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initialNodes as Node[]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges as Edge[]);
 
-  // Sync nodes from state back to store when they move
-  const onNodeDragStop: OnNodeDrag<Node> = useCallback((_, node) => {
-    updateNode(node.id, { position: node.position });
-  }, [updateNode]);
+  useEffect(() => {
+    setNodes(initialNodes);
+  }, [initialNodes, setNodes]);
 
-  const onConnect = useCallback((params: Connection) => {
-    const newEdge = {
-      id: `edge-${params.source}-${params.target}`,
-      source: params.source || '',
-      target: params.target || '',
-      sourceHandle: params.sourceHandle || undefined,
-      targetHandle: params.targetHandle || undefined,
+  useEffect(() => {
+    setEdges(initialEdges);
+  }, [initialEdges, setEdges]);
+
+  useEffect(() => {
+    flowInstance?.fitView({ padding: 0.18, duration: 300 });
+  }, [fitViewVersion, flowInstance]);
+
+  const onNodeDragStop: OnNodeDrag<Node> = useCallback(
+    (_, node) => {
+      updateNode(node.id, { position: node.position });
+    },
+    [updateNode],
+  );
+
+  const onConnect = (params: Connection) => {
+    if (!document || !params.source || !params.sourceHandle || !params.target || !params.targetHandle) {
+      return;
+    }
+
+    const resolveNodeAndPin = (nodeId: string, pinId: string) => {
+      const graphNode = document.nodes.find((item) => item.id === nodeId);
+      if (!graphNode) {
+        return null;
+      }
+
+      const pin = [...graphNode.inputs, ...graphNode.outputs].find((item) => item.id === pinId);
+      if (!pin) {
+        return null;
+      }
+
+      return { graphNode, pin };
     };
+
+    const source = resolveNodeAndPin(params.source, params.sourceHandle);
+    const target = resolveNodeAndPin(params.target, params.targetHandle);
+    if (!source || !target) {
+      return;
+    }
+
+    const newEdge: SkillEdge = createEdgeFromPins(source.graphNode, source.pin, target.graphNode, target.pin);
     addEdge(newEdge);
-    setEdges((eds) => addFlowEdge(params, eds));
-  }, [addEdge, setEdges]);
+  };
 
-  const onNodeClick: NodeMouseHandler<Node> = useCallback((_, node) => {
-    selectNode(node.id);
-  }, [selectNode]);
-
-  const onEdgeClick: EdgeMouseHandler<Edge> = useCallback((_, edge) => {
-    selectEdge(edge.id);
-  }, [selectEdge]);
-
+  const onNodeClick: NodeMouseHandler<Node> = useCallback((_, node) => selectNode(node.id), [selectNode]);
+  const onEdgeClick: EdgeMouseHandler<Edge> = useCallback((_, edge) => selectEdge(edge.id), [selectEdge]);
   const onPaneClick = useCallback(() => {
     selectNode(null);
     selectEdge(null);
   }, [selectNode, selectEdge]);
 
-  // Update flow nodes when document nodes change (e.g. from generator)
-  React.useEffect(() => {
-    setNodes(initialNodes);
-  }, [initialNodes, setNodes]);
-
-  React.useEffect(() => {
-    setEdges(initialEdges);
-  }, [initialEdges, setEdges]);
-
   if (!document) {
-    return (
-      <div className="graph-empty-state">
-        <p>No document active. Submit a prompt to generate a graph.</p>
-      </div>
-    );
+    return <div className="graph-empty-state">No graph loaded.</div>;
   }
 
   return (
     <div className="graph-editor">
+      <div className="graph-editor-chrome">
+        <div>
+          <div className="graph-editor-title">{document.name}</div>
+          <div className="graph-editor-subtitle">{document.metadata.description}</div>
+        </div>
+        <div className="graph-editor-stats">
+          <span>{document.nodes.length} nodes</span>
+          <span>{document.edges.length} wires</span>
+          <span>{document.groups.length} groups</span>
+        </div>
+      </div>
+
       <ReactFlow
+        onInit={setFlowInstance}
         nodes={nodes}
         edges={edges}
+        nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
         onNodeClick={onNodeClick}
         onEdgeClick={onEdgeClick}
+        onEdgesDelete={(deleted) => deleted.forEach((edge) => removeEdge(edge.id))}
         onPaneClick={onPaneClick}
-        nodeTypes={nodeTypes}
         fitView
+        minZoom={0.35}
+        maxZoom={1.6}
+        defaultEdgeOptions={{ type: 'smoothstep' }}
       >
-        <Background color="#f0f0f0" gap={20} />
-        <Controls />
-        <Panel position="top-right" className="graph-panel">
-          <div className="graph-stats">
-            <span>{document.nodes.length} Nodes</span>
-            <span>{document.edges.length} Edges</span>
-          </div>
-        </Panel>
+        <Background variant={BackgroundVariant.Lines} gap={24} color="#e2e8f0" />
+        <Background variant={BackgroundVariant.Lines} gap={120} color="#cbd5e1" />
+        <Controls showInteractive={false} className="graph-controls" />
       </ReactFlow>
     </div>
   );
 };
+
+const GraphEditor: React.FC = () => <GraphCanvas key="graph-canvas" />;
 
 export default GraphEditor;
