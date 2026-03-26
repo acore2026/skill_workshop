@@ -1,0 +1,45 @@
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.status-gray {
+  background-color: #f3f4f6;
+  color: #6b7280;
+}
+
+.status-blue {
+  background-color: #e0f2fe;
+  color: #0ea5e9;
+}
+
+.status-cyan {
+  background-color: #ecfeff;
+  color: #0891b2;
+}
+
+.status-indigo {
+  background-color: #e0e7ff;
+  color: #4f46e5;
+}
+
+.status-amber {
+  background-color: #fffbeb;
+  color: #d97706;
+}
+
+.status-green {
+  background-color: #ecfdf5;
+  color: #10b981;
+}
+
+.status-red {
+  background-color: #fef2f2;
+  color: #ef4444;
+}

@@ -1,0 +1,71 @@
+.inspector-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+  text-align: center;
+  padding: 2rem;
+  font-style: italic;
+}
+
+.inspector-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.inspector-section label {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  letter-spacing: 0.05em;
+}
+
+.inspector-input,
+.inspector-select,
+.inspector-textarea {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border-base);
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  background-color: white;
+  outline: none;
+}
+
+.inspector-input:focus,
+.inspector-select:focus,
+.inspector-textarea:focus {
+  border-color: var(--accent);
+}
+
+.inspector-input:disabled {
+  background-color: var(--bg-secondary);
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+.inspector-textarea {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  resize: vertical;
+}
+
+.inspector-actions {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  justify-content: flex-end;
+}

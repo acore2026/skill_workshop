@@ -1,0 +1,63 @@
+.skill-node {
+  padding: 0.75rem;
+  border-radius: 6px;
+  background: white;
+  border: 1px solid var(--border-base);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 160px;
+  transition: all 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+}
+
+.skill-node.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+.node-icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 4px;
+  background-color: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.node-content {
+  flex: 1;
+}
+
+.node-type-label {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  margin-bottom: 0.125rem;
+}
+
+.node-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.node-handle {
+  width: 8px !important;
+  height: 8px !important;
+  background: var(--border-strong) !important;
+  border: 2px solid white !important;
+}
+
+/* Node Type Variants */
+.node-intent .node-icon { background-color: #f0fdf4; color: #16a34a; }
+.node-discovery .node-icon { background-color: #eff6ff; color: #2563eb; }
+.node-skill .node-icon { background-color: #faf5ff; color: #9333ea; }
+.node-directive .node-icon { background-color: #fffbeb; color: #d97706; }
+.node-execution .node-icon { background-color: #f8fafc; color: #475569; }
