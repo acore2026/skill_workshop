@@ -1,8 +1,10 @@
 import React from 'react';
 import Button from '../../components/Button';
 import { useStore } from '../../store/useStore';
-import type { SkillEdge, SkillNode, SkillNodeType } from '../../schemas/skill';
+import type { CardType, SkillEdge, SkillNode } from '../../schemas/skill';
 import './InspectorPanel.css';
+
+const cardOptions: CardType[] = ['action', 'branch', 'loop', 'parallel', 'success', 'failure', 'constant', 'userdata'];
 
 const InspectorPanel: React.FC = () => {
   const {
@@ -26,9 +28,9 @@ const InspectorPanel: React.FC = () => {
   const renderNodeDetails = (node: SkillNode) => (
     <div className="inspector-content">
       <div className="inspector-title-block">
-        <div className="inspector-eyebrow">Node</div>
+        <div className="inspector-eyebrow">Card</div>
         <h3>{node.title}</h3>
-        <p>{node.subtitle ?? 'Compact node card with externalized details.'}</p>
+        <p>{node.summary}</p>
       </div>
 
       <div className="inspector-section">
@@ -37,28 +39,35 @@ const InspectorPanel: React.FC = () => {
       </div>
 
       <div className="inspector-section">
-        <label>Subtitle</label>
-        <input
-          value={node.subtitle ?? ''}
-          onChange={(e) => updateNode(node.id, { subtitle: e.target.value || undefined })}
-        />
+        <label>Summary</label>
+        <textarea rows={4} value={node.summary} onChange={(e) => updateNode(node.id, { summary: e.target.value })} />
       </div>
 
+      {node.sbi && (
+        <div className="inspector-section">
+          <label>SBI Action</label>
+          <textarea
+            rows={5}
+            value={JSON.stringify(node.sbi, null, 2)}
+            onChange={(e) => {
+              try {
+                updateNode(node.id, { sbi: JSON.parse(e.target.value) });
+              } catch {
+                // Ignore transient parse failures while typing.
+              }
+            }}
+          />
+        </div>
+      )}
+
       <div className="inspector-section">
-        <label>Type</label>
-        <select
-          value={node.type}
-          onChange={(e) => updateNode(node.id, { type: e.target.value as SkillNodeType })}
-        >
-          <option value="entry">Entry</option>
-          <option value="action">Action</option>
-          <option value="branch">Branch</option>
-          <option value="pure">Pure</option>
-          <option value="parameter">Parameter</option>
-          <option value="output">Output</option>
-          <option value="subgraph">Subgraph</option>
-          <option value="annotation">Annotation</option>
-          <option value="reroute">Reroute</option>
+        <label>Card Type</label>
+        <select value={node.cardType} onChange={(e) => updateNode(node.id, { cardType: e.target.value as CardType })}>
+          {cardOptions.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -78,42 +87,57 @@ const InspectorPanel: React.FC = () => {
       </div>
 
       <div className="inspector-section">
-        <label>Input Defaults</label>
+        <label>Inputs</label>
         <div className="pin-detail-list">
-          {node.inputs.length === 0 ? (
-            <div className="inspector-empty">No input pins.</div>
-          ) : (
-            node.inputs.map((pin) => (
-              <div key={pin.id} className="pin-detail-row">
-                <div>
-                  <strong>{pin.name}</strong>
-                  <span>{pin.dataType}</span>
-                </div>
-                <input
-                  value={pin.defaultValue === undefined || pin.defaultValue === null ? '' : String(pin.defaultValue)}
-                  onChange={(e) =>
-                    updateNode(node.id, {
-                      inputs: node.inputs.map((item) =>
-                        item.id === pin.id
-                          ? {
-                              ...item,
-                              defaultValue: e.target.value || undefined,
-                            }
-                          : item,
-                      ),
-                    })
-                  }
-                  placeholder={pin.optional ? 'Optional' : 'Required'}
-                />
+          {node.inputs.map((pin) => (
+            <div key={pin.id} className="pin-detail-row">
+              <div>
+                <strong>{pin.name}</strong>
+                <span>{pin.dataType}</span>
               </div>
-            ))
-          )}
+              <input
+                value={pin.defaultValue === undefined || pin.defaultValue === null ? '' : String(pin.defaultValue)}
+                onChange={(e) =>
+                  updateNode(node.id, {
+                    inputs: node.inputs.map((item) =>
+                      item.id === pin.id ? { ...item, defaultValue: e.target.value || undefined } : item,
+                    ),
+                  })
+                }
+                placeholder={pin.required ? 'Required' : 'Optional'}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="inspector-section">
+        <label>Action Flow Labels</label>
+        <div className="pin-detail-list">
+          {node.nextActions.map((port) => (
+            <div key={port.id} className="pin-detail-row">
+              <div>
+                <strong>{port.label}</strong>
+                <span>{port.mode}</span>
+              </div>
+              <input
+                value={port.label}
+                onChange={(e) =>
+                  updateNode(node.id, {
+                    nextActions: node.nextActions.map((item) =>
+                      item.id === port.id ? { ...item, label: e.target.value || item.label } : item,
+                    ),
+                  })
+                }
+              />
+            </div>
+          ))}
         </div>
       </div>
 
       <div className="inspector-actions">
         <Button size="sm" variant="danger" onClick={() => removeNode(node.id)}>
-          Delete Node
+          Delete Card
         </Button>
       </div>
     </div>
@@ -122,8 +146,8 @@ const InspectorPanel: React.FC = () => {
   const renderEdgeDetails = (edge: SkillEdge) => (
     <div className="inspector-content">
       <div className="inspector-title-block">
-        <div className="inspector-eyebrow">Wire</div>
-        <h3>{edge.edgeType} connection</h3>
+        <div className="inspector-eyebrow">Link</div>
+        <h3>{edge.edgeType === 'data' ? 'Data Link' : 'Action Flow Link'}</h3>
         <p>
           {edge.fromNodeId} → {edge.toNodeId}
         </p>
@@ -135,7 +159,7 @@ const InspectorPanel: React.FC = () => {
       </div>
 
       <div className="inspector-section">
-        <label>Wire Type</label>
+        <label>Link Type</label>
         <input value={edge.edgeType} disabled />
       </div>
 
@@ -147,9 +171,9 @@ const InspectorPanel: React.FC = () => {
           value={JSON.stringify(
             {
               fromNodeId: edge.fromNodeId,
-              fromPinId: edge.fromPinId,
+              fromPortId: edge.fromPortId,
               toNodeId: edge.toNodeId,
-              toPinId: edge.toPinId,
+              toPortId: edge.toPortId,
             },
             null,
             2,
@@ -159,7 +183,7 @@ const InspectorPanel: React.FC = () => {
 
       <div className="inspector-actions">
         <Button size="sm" variant="danger" onClick={() => removeEdge(edge.id)}>
-          Delete Wire
+          Delete Link
         </Button>
       </div>
     </div>
@@ -210,25 +234,7 @@ const InspectorPanel: React.FC = () => {
             updateDocument({
               metadata: {
                 ...document.metadata,
-                tags: e.target.value
-                  .split(',')
-                  .map((item) => item.trim())
-                  .filter(Boolean),
-              },
-            })
-          }
-        />
-      </div>
-
-      <div className="inspector-section">
-        <label>Execution Mode</label>
-        <input
-          value={document.metadata.executionMode}
-          onChange={(e) =>
-            updateDocument({
-              metadata: {
-                ...document.metadata,
-                executionMode: e.target.value,
+                tags: e.target.value.split(',').map((item) => item.trim()).filter(Boolean),
               },
             })
           }
@@ -237,16 +243,16 @@ const InspectorPanel: React.FC = () => {
 
       <div className="inspector-section compact">
         <div className="inspector-metric">
-          <span>Nodes</span>
+          <span>Cards</span>
           <strong>{document.nodes.length}</strong>
         </div>
         <div className="inspector-metric">
-          <span>Wires</span>
+          <span>Links</span>
           <strong>{document.edges.length}</strong>
         </div>
         <div className="inspector-metric">
-          <span>Groups</span>
-          <strong>{document.groups.length}</strong>
+          <span>Source</span>
+          <strong>Live</strong>
         </div>
       </div>
     </div>

@@ -10,32 +10,26 @@ import {
   Redo2,
   Save,
 } from 'lucide-react';
+import Button from '../components/Button';
+import StatusPill from '../components/StatusPill';
 import GraphEditor from '../features/graph/GraphEditor';
 import InspectorPanel from '../features/inspector/InspectorPanel';
 import EditorSidebar from '../features/navigation/EditorSidebar';
+import AgentChatbox from '../features/prompt/AgentChatbox';
 import UtilityPanel from '../features/utility/UtilityPanel';
-import StatusPill from '../components/StatusPill';
-import Button from '../components/Button';
 import { useStore } from '../store/useStore';
 import './Workspace.css';
 
 const Workspace: React.FC = () => {
-  const {
-    document,
-    appState,
-    validateDocument,
-    autoLayout,
-    requestFitView,
-    runMockExecution,
-  } = useStore();
+  const { document, appState, autoLayout, requestFitView, runMockExecution, validateDocument } = useStore();
 
   return (
     <div className="workspace-shell">
       <header className="workspace-toolbar">
         <div className="toolbar-brand">
-          <div className="brand-mark">WS</div>
+          <div className="brand-mark">SG</div>
           <div>
-            <div className="brand-title">Workspace Graph Editor</div>
+            <div className="brand-title">Skill Generator</div>
             <div className="brand-subtitle">{document?.name ?? 'No graph loaded'}</div>
           </div>
         </div>
@@ -85,8 +79,8 @@ const Workspace: React.FC = () => {
       </header>
 
       <main className="workspace-main">
-        <aside className="workspace-sidebar">
-          <EditorSidebar />
+        <aside className="workspace-chat-panel">
+          <AgentChatbox />
         </aside>
 
         <section className="workspace-center">
@@ -98,8 +92,13 @@ const Workspace: React.FC = () => {
           </div>
         </section>
 
-        <aside className="workspace-inspector">
-          <InspectorPanel />
+        <aside className="workspace-right-rail">
+          <div className="workspace-sidebar">
+            <EditorSidebar />
+          </div>
+          <div className="workspace-inspector">
+            <InspectorPanel />
+          </div>
         </aside>
       </main>
     </div>

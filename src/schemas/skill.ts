@@ -1,52 +1,49 @@
 import { z } from 'zod';
 
-export const GraphTypeSchema = z.enum(['event_graph', 'function_graph', 'subgraph']);
-export const SkillNodeTypeSchema = z.enum([
-  'entry',
+export const GraphTypeSchema = z.enum(['action_graph']);
+export const CardTypeSchema = z.enum([
   'action',
   'branch',
-  'pure',
-  'parameter',
-  'output',
-  'subgraph',
-  'annotation',
-  'reroute',
+  'loop',
+  'parallel',
+  'success',
+  'failure',
+  'constant',
+  'userdata',
 ]);
-export const PinDirectionSchema = z.enum(['input', 'output']);
-export const PinKindSchema = z.enum(['execution', 'data', 'event', 'trigger', 'reference']);
-export const PinMultiplicitySchema = z.enum(['single', 'multiple']);
-export const EdgeTypeSchema = z.enum(['execution', 'data', 'event', 'reference']);
+export const DataPortDirectionSchema = z.enum(['input', 'output']);
+export const NextActionPortModeSchema = z.enum(['inout', 'target']);
+export const EdgeTypeSchema = z.enum(['data', 'next_action']);
 
-export const GraphMetadataSchema = z.object({
-  description: z.string().default(''),
-  tags: z.array(z.string()).default([]),
-  executionMode: z.string().default('Sequential'),
-  authoringMode: z.string().default('Workspace'),
-});
-
-export const PinSchema = z.object({
+export const DataPortSchema = z.object({
   id: z.string(),
   nodeId: z.string(),
-  direction: PinDirectionSchema,
+  direction: DataPortDirectionSchema,
   name: z.string(),
   dataType: z.string(),
-  pinKind: PinKindSchema,
-  multiplicity: PinMultiplicitySchema.default('single'),
-  optional: z.boolean().default(false),
+  required: z.boolean().default(false),
   defaultValue: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
-  ui: z
-    .object({
-      accent: z.string().optional(),
-      compactLabel: z.boolean().optional(),
-    })
-    .optional(),
 });
 
-export const GraphNodeSchema = z.object({
+export const SbiActionSchema = z.object({
+  service: z.string(),
+  operation: z.string(),
+  method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
+  endpoint: z.string(),
+});
+
+export const NextActionPortSchema = z.object({
   id: z.string(),
-  type: SkillNodeTypeSchema,
+  nodeId: z.string(),
+  label: z.string(),
+  mode: NextActionPortModeSchema.default('inout'),
+});
+
+export const CardNodeSchema = z.object({
+  id: z.string(),
+  cardType: CardTypeSchema,
   title: z.string(),
-  subtitle: z.string().optional(),
+  summary: z.string(),
   position: z.object({
     x: z.number(),
     y: z.number(),
@@ -55,14 +52,20 @@ export const GraphNodeSchema = z.object({
     w: z.number(),
     h: z.number(),
   }),
-  inputs: z.array(PinSchema).default([]),
-  outputs: z.array(PinSchema).default([]),
+  inputs: z.array(DataPortSchema).default([]),
+  outputs: z.array(DataPortSchema).default([]),
+  nextActions: z.array(NextActionPortSchema).default([]),
+  sbi: SbiActionSchema.optional(),
   properties: z.record(z.string(), z.unknown()).default({}),
+  sourceCase: z.object({
+    caseId: z.string(),
+    title: z.string(),
+    excerpt: z.string(),
+  }),
   uiState: z
     .object({
-      category: z.string().optional(),
-      badge: z.string().optional(),
       tint: z.string().optional(),
+      badge: z.string().optional(),
     })
     .default({}),
   validationState: z
@@ -79,9 +82,9 @@ export const GraphNodeSchema = z.object({
 export const GraphEdgeSchema = z.object({
   id: z.string(),
   fromNodeId: z.string(),
-  fromPinId: z.string(),
+  fromPortId: z.string(),
   toNodeId: z.string(),
-  toPinId: z.string(),
+  toPortId: z.string(),
   edgeType: EdgeTypeSchema,
   label: z.string().optional(),
   style: z
@@ -92,46 +95,23 @@ export const GraphEdgeSchema = z.object({
     .default({}),
 });
 
-export const GroupRegionSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  rect: z.object({
-    x: z.number(),
-    y: z.number(),
-    w: z.number(),
-    h: z.number(),
-  }),
-  style: z
-    .object({
-      color: z.string().default('#f5f7fb'),
-      borderColor: z.string().default('#d9e1f2'),
-    })
-    .default({
-      color: '#f5f7fb',
-      borderColor: '#d9e1f2',
-    }),
-  childNodeIds: z.array(z.string()).default([]),
-  collapsed: z.boolean().optional(),
-});
-
 export const SkillDocumentSchema = z.object({
   id: z.string(),
   name: z.string(),
-  type: GraphTypeSchema.default('event_graph'),
+  type: GraphTypeSchema.default('action_graph'),
   version: z.string().default('1.0.0'),
-  nodes: z.array(GraphNodeSchema),
+  nodes: z.array(CardNodeSchema),
   edges: z.array(GraphEdgeSchema),
-  groups: z.array(GroupRegionSchema).default([]),
   viewport: z.object({
     x: z.number().default(0),
     y: z.number().default(0),
     zoom: z.number().default(1),
   }),
-  metadata: GraphMetadataSchema.default({
-    description: '',
-    tags: [],
-    executionMode: 'Sequential',
-    authoringMode: 'Workspace',
+  metadata: z.object({
+    description: z.string().default(''),
+    tags: z.array(z.string()).default([]),
+    executionMode: z.string().default('Action Flow'),
+    sourceDocument: z.string().default('S2-2600222.md'),
   }),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -160,13 +140,11 @@ export const SkillDocumentSchema = z.object({
 });
 
 export type GraphType = z.infer<typeof GraphTypeSchema>;
-export type SkillNodeType = z.infer<typeof SkillNodeTypeSchema>;
-export type PinDirection = z.infer<typeof PinDirectionSchema>;
-export type PinKind = z.infer<typeof PinKindSchema>;
-export type PinMultiplicity = z.infer<typeof PinMultiplicitySchema>;
+export type CardType = z.infer<typeof CardTypeSchema>;
+export type DataPort = z.infer<typeof DataPortSchema>;
+export type NextActionPort = z.infer<typeof NextActionPortSchema>;
+export type SbiAction = z.infer<typeof SbiActionSchema>;
 export type EdgeType = z.infer<typeof EdgeTypeSchema>;
-export type SkillPin = z.infer<typeof PinSchema>;
-export type SkillNode = z.infer<typeof GraphNodeSchema>;
+export type SkillNode = z.infer<typeof CardNodeSchema>;
 export type SkillEdge = z.infer<typeof GraphEdgeSchema>;
-export type GroupRegion = z.infer<typeof GroupRegionSchema>;
 export type SkillDocument = z.infer<typeof SkillDocumentSchema>;

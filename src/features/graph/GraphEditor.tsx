@@ -10,26 +10,33 @@ import {
 } from '@xyflow/react';
 import type { Connection, Edge, EdgeMouseHandler, Node, NodeMouseHandler, NodeTypes, OnNodeDrag, ReactFlowInstance } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { createEdgeFromPins } from '../../lib/graph';
-import type { SkillEdge, SkillNode, SkillPin } from '../../schemas/skill';
 import { useStore } from '../../store/useStore';
+import type { NextActionPort, SkillNode } from '../../schemas/skill';
 import SkillNodeComponent from './SkillNodeComponent';
 import './GraphEditor.css';
 
 interface GraphNodeData {
+  id: string;
+  cardType: SkillNode['cardType'];
   title: string;
-  subtitle?: string;
-  type: SkillNode['type'];
+  summary: string;
   badge?: string;
   tint?: string;
-  inputs: SkillPin[];
-  outputs: SkillPin[];
+  sbi?: SkillNode['sbi'];
+  inputs: SkillNode['inputs'];
+  outputs: SkillNode['outputs'];
+  nextActions: NextActionPort[];
+  properties: SkillNode['properties'];
   status?: string;
+  onUpdateNode: (id: string, updates: Partial<SkillNode>) => void;
 }
 
 const nodeTypes: NodeTypes = {
-  graphNode: SkillNodeComponent,
+  actionCard: SkillNodeComponent,
 };
+
+const handleId = (portId: string, side: 'source' | 'target') => `${portId}::${side}`;
+const basePortId = (handle: string) => handle.split('::')[0];
 
 const GraphCanvas: React.FC = () => {
   const {
@@ -38,8 +45,9 @@ const GraphCanvas: React.FC = () => {
     selectNode,
     selectEdge,
     updateNode,
-    addEdge,
+    connectPorts,
     removeEdge,
+    addCardOfType,
   } = useStore();
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
 
@@ -47,20 +55,25 @@ const GraphCanvas: React.FC = () => {
     () =>
       document?.nodes.map((node) => ({
         id: node.id,
-        type: 'graphNode',
+        type: 'actionCard',
         position: node.position,
         data: {
+          id: node.id,
+          cardType: node.cardType,
           title: node.title,
-          subtitle: node.subtitle,
-          type: node.type,
+          summary: node.summary,
           badge: node.uiState.badge,
           tint: node.uiState.tint,
+          sbi: node.sbi,
           inputs: node.inputs,
           outputs: node.outputs,
+          nextActions: node.nextActions,
+          properties: node.properties,
           status: document.execution.nodeStatuses[node.id],
+          onUpdateNode: updateNode,
         } satisfies GraphNodeData,
       })) ?? [],
-    [document],
+    [document, updateNode],
   );
 
   const initialEdges = useMemo(
@@ -68,15 +81,20 @@ const GraphCanvas: React.FC = () => {
       document?.edges.map((edge) => ({
         id: edge.id,
         source: edge.fromNodeId,
-        sourceHandle: edge.fromPinId,
+        sourceHandle: handleId(edge.fromPortId, 'source'),
         target: edge.toNodeId,
-        targetHandle: edge.toPinId,
+        targetHandle: handleId(edge.toPortId, 'target'),
         label: edge.label,
         animated: edge.style.animated,
         markerEnd: { type: MarkerType.ArrowClosed },
         style: {
           stroke: edge.style.stroke,
-          strokeWidth: edge.edgeType === 'execution' ? 2.6 : 2,
+          strokeWidth: edge.edgeType === 'next_action' ? 2.8 : 2.2,
+        },
+        labelStyle: {
+          fontSize: 11,
+          fontWeight: 700,
+          fill: '#64748b',
         },
       })) ?? [],
     [document],
@@ -97,40 +115,15 @@ const GraphCanvas: React.FC = () => {
     flowInstance?.fitView({ padding: 0.18, duration: 300 });
   }, [fitViewVersion, flowInstance]);
 
-  const onNodeDragStop: OnNodeDrag<Node> = useCallback(
-    (_, node) => {
-      updateNode(node.id, { position: node.position });
-    },
-    [updateNode],
-  );
+  const onNodeDragStop: OnNodeDrag<Node> = useCallback((_, node) => {
+    updateNode(node.id, { position: node.position });
+  }, [updateNode]);
 
   const onConnect = (params: Connection) => {
-    if (!document || !params.source || !params.sourceHandle || !params.target || !params.targetHandle) {
+    if (!params.sourceHandle || !params.targetHandle) {
       return;
     }
-
-    const resolveNodeAndPin = (nodeId: string, pinId: string) => {
-      const graphNode = document.nodes.find((item) => item.id === nodeId);
-      if (!graphNode) {
-        return null;
-      }
-
-      const pin = [...graphNode.inputs, ...graphNode.outputs].find((item) => item.id === pinId);
-      if (!pin) {
-        return null;
-      }
-
-      return { graphNode, pin };
-    };
-
-    const source = resolveNodeAndPin(params.source, params.sourceHandle);
-    const target = resolveNodeAndPin(params.target, params.targetHandle);
-    if (!source || !target) {
-      return;
-    }
-
-    const newEdge: SkillEdge = createEdgeFromPins(source.graphNode, source.pin, target.graphNode, target.pin);
-    addEdge(newEdge);
+    connectPorts(basePortId(params.sourceHandle), basePortId(params.targetHandle));
   };
 
   const onNodeClick: NodeMouseHandler<Node> = useCallback((_, node) => selectNode(node.id), [selectNode]);
@@ -151,10 +144,17 @@ const GraphCanvas: React.FC = () => {
           <div className="graph-editor-title">{document.name}</div>
           <div className="graph-editor-subtitle">{document.metadata.description}</div>
         </div>
+        <div className="graph-editor-quick-add">
+          <button type="button" onClick={() => addCardOfType('action')}>+ Action</button>
+          <button type="button" onClick={() => addCardOfType('branch')}>+ Branch</button>
+          <button type="button" onClick={() => addCardOfType('parallel')}>+ Parallel</button>
+          <button type="button" onClick={() => addCardOfType('constant')}>+ Constant</button>
+          <button type="button" onClick={() => addCardOfType('userdata')}>+ User Data</button>
+        </div>
         <div className="graph-editor-stats">
-          <span>{document.nodes.length} nodes</span>
-          <span>{document.edges.length} wires</span>
-          <span>{document.groups.length} groups</span>
+          <span>{document.nodes.length} cards</span>
+          <span>{document.edges.length} links</span>
+          <span>{document.metadata.executionMode}</span>
         </div>
       </div>
 
@@ -184,6 +184,6 @@ const GraphCanvas: React.FC = () => {
   );
 };
 
-const GraphEditor: React.FC = () => <GraphCanvas key="graph-canvas" />;
+const GraphEditor: React.FC = () => <GraphCanvas key="action-graph-canvas" />;
 
 export default GraphEditor;
