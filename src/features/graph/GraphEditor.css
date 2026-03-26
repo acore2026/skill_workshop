@@ -1,31 +1,62 @@
 .graph-editor {
   width: 100%;
   height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.graph-editor-chrome {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid var(--border-light);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(250, 251, 255, 0.92));
+}
+
+.graph-editor-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.graph-editor-subtitle {
+  margin-top: 0.2rem;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.graph-editor-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.graph-editor-stats span {
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: #f6f8fc;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .graph-empty-state {
-  width: 100%;
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  height: 100%;
   color: var(--text-tertiary);
-  font-size: 1rem;
-  background-color: var(--bg-secondary);
 }
 
-.graph-panel {
-  padding: 0.5rem;
-  background: white;
-  border-radius: 4px;
-  border: 1px solid var(--border-light);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+.react-flow {
+  background:
+    radial-gradient(circle at top left, rgba(96, 165, 250, 0.08), transparent 20%),
+    linear-gradient(180deg, #f9fbff 0%, #f4f7fb 100%);
 }
 
-.graph-stats {
-  display: flex;
-  gap: 1rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+.graph-controls {
+  border-radius: 14px !important;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08) !important;
+  overflow: hidden;
 }
