@@ -9,10 +9,11 @@ const tabs = [
   { id: 'validation', label: 'Validation' },
   { id: 'search', label: 'Search' },
   { id: 'trace', label: 'Trace' },
+  { id: 'yaml', label: 'YAML' },
 ] as const;
 
 const UtilityPanel: React.FC = () => {
-  const { document, utilityTab, setUtilityTab, runMockExecution, resetExecution, validateDocument, appState } = useStore();
+  const { document, rawSkillYaml, yamlError, utilityTab, setUtilityTab, runMockExecution, resetExecution, validateDocument, appState } = useStore();
   const [query, setQuery] = useState('');
 
   const searchResults = useMemo(() => {
@@ -145,6 +146,17 @@ const UtilityPanel: React.FC = () => {
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {utilityTab === 'yaml' && (
+          <div className="utility-yaml">
+            {yamlError && <div className="utility-entry level-error">YAML parse error: {yamlError}</div>}
+            {rawSkillYaml.trim() ? (
+              <textarea readOnly value={rawSkillYaml} className="utility-yaml-viewer" />
+            ) : (
+              <div className="utility-empty">No YAML skill document available yet.</div>
+            )}
           </div>
         )}
       </div>

@@ -9,7 +9,10 @@ export const CardTypeSchema = z.enum([
   'success',
   'failure',
   'constant',
-  'userdata',
+  'user_container',
+  'device_container',
+  'network_container',
+  'app_container',
 ]);
 export const DataPortDirectionSchema = z.enum(['input', 'output']);
 export const NextActionPortModeSchema = z.enum(['inout', 'target']);

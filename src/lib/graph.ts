@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { CardType, DataPort, NextActionPort, SbiAction, SkillDocument, SkillEdge, SkillNode } from '../schemas/skill';
+import type { CardType, DataPort, NextActionPort, SbiAction, SkillDocument, SkillEdge, SkillNode } from '../schemas/skill.ts';
 
 export interface CardTemplate {
   id: string;
@@ -27,6 +27,10 @@ export interface CaseTemplate {
     title?: string;
     summary?: string;
     properties?: Record<string, unknown>;
+    inputs?: Array<Omit<DataPort, 'id' | 'nodeId'>>;
+    outputs?: Array<Omit<DataPort, 'id' | 'nodeId'>>;
+    nextActions?: Array<Omit<NextActionPort, 'id' | 'nodeId'>>;
+    sbi?: SbiAction;
     position: { x: number; y: number };
   }>;
   edges: Array<
@@ -175,10 +179,7 @@ export const CARD_LIBRARY: CardTemplate[] = [
     summary: 'Terminal success state for the current skill path.',
     badge: 'Success',
     tint: '#dcfce7',
-    inputs: [
-      { direction: 'input', name: 'result', dataType: 'json', required: false },
-      { direction: 'input', name: 'service_directive', dataType: 'directive', required: false },
-    ],
+    inputs: [],
     outputs: [],
     nextActions: [{ label: 'complete', mode: 'target' }],
     properties: { outcome: 'success' },
@@ -190,10 +191,7 @@ export const CARD_LIBRARY: CardTemplate[] = [
     summary: 'Terminal failure state for the current skill path.',
     badge: 'Failure',
     tint: '#fee2e2',
-    inputs: [
-      { direction: 'input', name: 'error', dataType: 'error', required: false },
-      { direction: 'input', name: 'match_score', dataType: 'number', required: false },
-    ],
+    inputs: [],
     outputs: [],
     nextActions: [{ label: 'halt', mode: 'target' }],
     properties: { outcome: 'failure' },
@@ -206,16 +204,16 @@ export const CARD_LIBRARY: CardTemplate[] = [
     badge: 'Constant',
     tint: '#fae8ff',
     inputs: [],
-    outputs: [{ direction: 'output', name: 'value', dataType: 'string', required: false, defaultValue: '' }],
-    nextActions: [{ label: 'next', mode: 'inout' }],
-    properties: { valueType: 'string', value: 'sample' },
+    outputs: [{ direction: 'output', name: 'attribute_1', dataType: 'string', required: false, defaultValue: 'sample' }],
+    nextActions: [],
+    properties: { attribute_1: 'sample' },
   },
   {
-    id: 'userdata',
-    cardType: 'userdata',
-    title: 'User Data',
-    summary: 'Expose canonical subscriber and session identifiers to the skill graph.',
-    badge: 'User Data',
+    id: 'user_container',
+    cardType: 'user_container',
+    title: 'User Container',
+    summary: 'Expose subscriber and session identity values as a single data object.',
+    badge: 'User',
     tint: '#e0f2fe',
     inputs: [],
     outputs: [
@@ -225,7 +223,7 @@ export const CARD_LIBRARY: CardTemplate[] = [
       { direction: 'output', name: 'S-NSSAI', dataType: 'string', required: false },
       { direction: 'output', name: 'GPSI', dataType: 'string', required: false },
     ],
-    nextActions: [{ label: 'next', mode: 'inout' }],
+    nextActions: [],
     properties: {
       SUPI: 'imsi-001010123456789',
       'PDU Session ID': 10,
@@ -234,28 +232,177 @@ export const CARD_LIBRARY: CardTemplate[] = [
       GPSI: 'msisdn-8613712345678',
     },
   },
+  {
+    id: 'device_container',
+    cardType: 'device_container',
+    title: 'Device Container',
+    summary: 'Expose UE mobility, compute, and capability context as a single value.',
+    badge: 'Device',
+    tint: '#ede9fe',
+    inputs: [],
+    outputs: [
+      { direction: 'output', name: 'Mobility State', dataType: 'string', required: false },
+      { direction: 'output', name: 'Compute Resource Type', dataType: 'string', required: false },
+      { direction: 'output', name: 'UE Service Capabilities', dataType: 'string', required: false },
+      { direction: 'output', name: '3GPP Service Role', dataType: 'string', required: false },
+    ],
+    nextActions: [],
+    properties: {
+      'Mobility State': 'stationary',
+      'Compute Resource Type': 'edge-assisted',
+      'UE Service Capabilities': 'voice,data,sensing',
+      '3GPP Service Role': 'consumer',
+    },
+  },
+  {
+    id: 'network_container',
+    cardType: 'network_container',
+    title: 'Network Container',
+    summary: 'Expose service-area and network capability context as a single value.',
+    badge: 'Network',
+    tint: '#dcfce7',
+    inputs: [],
+    outputs: [
+      { direction: 'output', name: 'Service Area', dataType: 'string', required: false },
+      { direction: 'output', name: 'NF Load Status', dataType: 'string', required: false },
+      { direction: 'output', name: 'Supported Protocols', dataType: 'string', required: false },
+    ],
+    nextActions: [],
+    properties: {
+      'Service Area': 'shanghai-core',
+      'NF Load Status': 'nominal',
+      'Supported Protocols': 'HTTP2,QUIC',
+    },
+  },
+  {
+    id: 'app_container',
+    cardType: 'app_container',
+    title: 'App Container',
+    summary: 'Expose application intent constraints as a single value.',
+    badge: 'App',
+    tint: '#ffe4e6',
+    inputs: [],
+    outputs: [
+      { direction: 'output', name: 'App Service Category', dataType: 'string', required: false },
+      { direction: 'output', name: 'Min Bandwidth Req', dataType: 'string', required: false },
+    ],
+    nextActions: [],
+    properties: {
+      'App Service Category': 'immersive-media',
+      'Min Bandwidth Req': '25Mbps',
+    },
+  },
 ];
 
 export const CASE_LIBRARY: CaseTemplate[] = [
   {
     id: 'three-stage-pipeline',
-    title: 'Three-Stage Execution Pipeline',
-    summary: 'Intent to skill to service directive with deterministic execution.',
+    title: 'Gaming Turbo Mode',
+    summary: 'Create QoS, charging, and policy updates for a gaming turbo-mode request.',
     excerpt:
-      'The paper defines a strict Intent -> Skill -> Service Directive pipeline so abstract goals become safe network actions.',
-    tags: ['intent', 'skill', 'directive'],
+      'Enable Turbo Mode for Gaming drives a compact AF, charging, and policy authorization flow for a latency-sensitive session.',
+    tags: ['gaming', 'qos', 'policy'],
     cards: [
-      { key: 'intent', templateId: 'action', title: 'Intent Intake', summary: 'Capture the Why from the agent or user.', properties: { stage: 'intent' }, position: { x: 120, y: 180 } },
-      { key: 'skill', templateId: 'action', title: 'Semantic Skill Discovery', summary: 'Resolve intent into a skill URI via semantic matching.', properties: { stage: 'skill' }, position: { x: 410, y: 180 } },
-      { key: 'directive', templateId: 'action', title: 'Service Directive', summary: 'Translate the skill into deterministic signaling.', properties: { stage: 'directive' }, position: { x: 700, y: 180 } },
-      { key: 'result', templateId: 'success', title: 'Directive Accepted', summary: 'Network accepts the deterministic directive.', position: { x: 1010, y: 180 } },
+      {
+        key: 'afsession',
+        templateId: 'action',
+        title: 'AFSessionWithQosCreate',
+        summary: 'Create an application session with required QoS for gaming traffic.',
+        properties: {
+          afAppId: 'cloud-gaming',
+          dnn: 'internet',
+          snssai: '1-010203',
+          qosReference: 'GBR',
+          notificationUri: 'https://af.example.com/callbacks/qos',
+        },
+        inputs: [
+          { direction: 'input', name: 'afAppId', dataType: 'string', required: true, defaultValue: 'cloud-gaming' },
+          { direction: 'input', name: 'dnn', dataType: 'string', required: false, defaultValue: 'internet' },
+          { direction: 'input', name: 'snssai', dataType: 'string', required: false, defaultValue: '1-010203' },
+          { direction: 'input', name: 'qosReference', dataType: 'string', required: false, defaultValue: 'GBR' },
+          { direction: 'input', name: 'notificationUri', dataType: 'string', required: false, defaultValue: 'https://af.example.com/callbacks/qos' },
+        ],
+        outputs: [
+          { direction: 'output', name: 'appSessionId', dataType: 'string', required: false },
+          { direction: 'output', name: 'qosDecision', dataType: 'json', required: false },
+        ],
+        sbi: {
+          service: 'Npcf_PolicyAuthorization',
+          operation: 'AFSessionWithQosCreate',
+          method: 'POST',
+          endpoint: '/npcf-policyauthorization/v1/app-sessions',
+        },
+        position: { x: 160, y: 180 },
+      },
+      {
+        key: 'chargeable',
+        templateId: 'action',
+        title: 'ChargeablePartyCreate',
+        summary: 'Create a sponsored charging transaction for the boosted gaming flow.',
+        properties: {
+          dnn: 'internet',
+          snssai: '1-010203',
+          sponsorInformation: 'game-pass-premium',
+          sponsoringStatus: 'enabled',
+          notificationDestination: 'https://af.example.com/callbacks/charging',
+        },
+        inputs: [
+          { direction: 'input', name: 'dnn', dataType: 'string', required: false, defaultValue: 'internet' },
+          { direction: 'input', name: 'snssai', dataType: 'string', required: false, defaultValue: '1-010203' },
+          { direction: 'input', name: 'sponsorInformation', dataType: 'string', required: false, defaultValue: 'game-pass-premium' },
+          { direction: 'input', name: 'sponsoringStatus', dataType: 'string', required: false, defaultValue: 'enabled' },
+          { direction: 'input', name: 'notificationDestination', dataType: 'string', required: false, defaultValue: 'https://af.example.com/callbacks/charging' },
+        ],
+        outputs: [
+          { direction: 'output', name: 'transactionId', dataType: 'string', required: false },
+          { direction: 'output', name: 'chargeableParty', dataType: 'json', required: false },
+        ],
+        sbi: {
+          service: 'ChargeableParty',
+          operation: 'ChargeablePartyCreate',
+          method: 'POST',
+          endpoint: '/3gpp-chargeable-party/v1/{scsAsId}/transactions',
+        },
+        position: { x: 500, y: 120 },
+      },
+      {
+        key: 'policy',
+        templateId: 'action',
+        title: 'PolicyAuthorizationUpdate',
+        summary: 'Update the policy authorization session with gaming QoS refinements.',
+        properties: {
+          qosReference: 'GBR',
+          altSerReqs: 'LOW_LATENCY,HIGH_THROUGHPUT',
+          disUeNotif: true,
+          maxSuppBwDl: '150 Mbps',
+          maxSuppBwUl: '50 Mbps',
+        },
+        inputs: [
+          { direction: 'input', name: 'appSessionId', dataType: 'string', required: true },
+          { direction: 'input', name: 'qosReference', dataType: 'string', required: false, defaultValue: 'GBR' },
+          { direction: 'input', name: 'altSerReqs', dataType: 'string', required: false, defaultValue: 'LOW_LATENCY,HIGH_THROUGHPUT' },
+          { direction: 'input', name: 'disUeNotif', dataType: 'boolean', required: false, defaultValue: true },
+          { direction: 'input', name: 'maxSuppBwDl', dataType: 'string', required: false, defaultValue: '150 Mbps' },
+        ],
+        outputs: [
+          { direction: 'output', name: 'policyPatchResult', dataType: 'json', required: false },
+          { direction: 'output', name: 'serviceDirective', dataType: 'directive', required: false },
+        ],
+        sbi: {
+          service: 'Npcf_PolicyAuthorization',
+          operation: 'PolicyAuthorizationUpdate',
+          method: 'PATCH',
+          endpoint: '/npcf-policyauthorization/v1/app-sessions/{appSessionId}',
+        },
+        position: { x: 500, y: 300 },
+      },
+      { key: 'result', templateId: 'success', title: 'Turbo Mode Enabled', summary: 'Gaming boost policy is active and sponsor charging is attached.', position: { x: 860, y: 210 } },
     ],
     edges: [
-      { type: 'data', from: { card: 'intent', port: 'intent' }, to: { card: 'skill', port: 'intent' }, label: 'intent payload' },
-      { type: 'data', from: { card: 'skill', port: 'skill_uri' }, to: { card: 'directive', port: 'intent' }, label: 'skill uri' },
-      { type: 'next_action', from: { card: 'intent', port: 'next' }, to: { card: 'skill', port: 'next' } },
-      { type: 'next_action', from: { card: 'skill', port: 'next' }, to: { card: 'directive', port: 'next' } },
-      { type: 'next_action', from: { card: 'directive', port: 'next' }, to: { card: 'result', port: 'complete' } },
+      { type: 'data', from: { card: 'afsession', port: 'appSessionId' }, to: { card: 'policy', port: 'appSessionId' }, label: 'session id' },
+      { type: 'next_action', from: { card: 'afsession', port: 'next' }, to: { card: 'chargeable', port: 'next' } },
+      { type: 'next_action', from: { card: 'chargeable', port: 'next' }, to: { card: 'policy', port: 'next' } },
+      { type: 'next_action', from: { card: 'policy', port: 'next' }, to: { card: 'result', port: 'complete' } },
     ],
   },
   {
@@ -313,7 +460,11 @@ export const getCaseById = (caseId: string) => CASE_LIBRARY.find((item) => item.
 export const createCardFromTemplate = (
   template: CardTemplate,
   position: { x: number; y: number },
-  overrides?: Partial<Pick<SkillNode, 'title' | 'summary' | 'properties'>>,
+  overrides?: Partial<Pick<SkillNode, 'title' | 'summary' | 'properties' | 'sbi'>> & {
+    inputs?: CardTemplate['inputs'];
+    outputs?: CardTemplate['outputs'];
+    nextActions?: CardTemplate['nextActions'];
+  },
   sourceCase?: SkillNode['sourceCase'],
 ): SkillNode => {
   const nodeId = uuidv4();
@@ -325,14 +476,14 @@ export const createCardFromTemplate = (
     summary: overrides?.summary ?? template.summary,
     position,
     size: { w: 320, h: 220 },
-    inputs: template.inputs.map((port) =>
+    inputs: (overrides?.inputs ?? template.inputs).map((port) =>
       createDataPort(nodeId, 'input', port.name, port.dataType, port.required, port.defaultValue),
     ),
-    outputs: template.outputs.map((port) =>
+    outputs: (overrides?.outputs ?? template.outputs).map((port) =>
       createDataPort(nodeId, 'output', port.name, port.dataType, port.required, port.defaultValue),
     ),
-    nextActions: template.nextActions.map((port) => createNextActionPort(nodeId, port.label, port.mode)),
-    sbi: template.sbi,
+    nextActions: (overrides?.nextActions ?? template.nextActions).map((port) => createNextActionPort(nodeId, port.label, port.mode)),
+    sbi: overrides?.sbi ?? template.sbi,
     properties: overrides?.properties ?? template.properties,
     sourceCase:
       sourceCase ?? {
@@ -429,6 +580,10 @@ export const instantiateCase = (caseTemplate: CaseTemplate): SkillDocument => {
             ...template.properties,
             ...card.properties,
           },
+          inputs: card.inputs,
+          outputs: card.outputs,
+          nextActions: card.nextActions,
+          sbi: card.sbi,
         },
         {
           caseId: caseTemplate.id,
@@ -724,6 +879,13 @@ export const createEdgeFromPorts = (
 export const validateDocument = (document: SkillDocument) => {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const dataCardTypes = new Set<CardType>([
+    'constant',
+    'user_container',
+    'device_container',
+    'network_container',
+    'app_container',
+  ]);
 
   document.nodes.forEach((node) => {
     if (!node.title.trim()) {
@@ -748,7 +910,7 @@ export const validateDocument = (document: SkillDocument) => {
       errors.push(`Terminal card "${node.title}" cannot have outgoing next action links.`);
     }
 
-    if (node.cardType !== 'success' && node.cardType !== 'failure' && outboundNext.length === 0) {
+    if (!dataCardTypes.has(node.cardType) && node.cardType !== 'success' && node.cardType !== 'failure' && outboundNext.length === 0) {
       warnings.push(`Card "${node.title}" has no outgoing next action path.`);
     }
   });

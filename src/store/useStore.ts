@@ -1,15 +1,15 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  CASE_LIBRARY,
   autoLayoutDocument,
   createCardNode,
-  createStarterDocument,
   createEdgeFromPorts,
   getExecutionOrder,
   validateDocument as runValidation,
 } from '../lib/graph';
+import { streamSkillGeneration } from '../lib/api';
 import { runSkillGenerator } from '../lib/skillGenerator';
+import { parseSkillYaml, skillDocumentToYaml } from '../lib/skillYaml';
 import type { CardType, SkillDocument, SkillEdge, SkillNode } from '../schemas/skill';
 import type { StatusType } from '../components/StatusPill';
 
@@ -28,22 +28,22 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  streaming?: boolean;
+  displayType?: 'message' | 'status';
   documentId?: string;
   toolCalls?: ToolCall[];
   skillInstalls?: SkillInstall[];
 }
 
 export type SidebarTab = 'outline' | 'library';
-export type UtilityTab = 'log' | 'validation' | 'search' | 'trace';
-
-interface PromptResult {
-  summary: string;
-  toolCallName: string;
-  model: string;
-}
+export type UtilityTab = 'log' | 'validation' | 'search' | 'trace' | 'yaml';
+export type GenerationModel = 'qwen3-32b' | 'kimi-k2.5';
 
 interface AppState {
   document: SkillDocument | null;
+  rawSkillYaml: string;
+  yamlError: string | null;
+  generationModel: GenerationModel;
   appState: StatusType;
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
@@ -52,15 +52,16 @@ interface AppState {
   fitViewVersion: number;
   messages: ChatMessage[];
   setDocument: (doc: SkillDocument | null) => void;
+  setGenerationModel: (model: GenerationModel) => void;
   updateDocument: (updates: Partial<SkillDocument>) => void;
   validateDocument: () => void;
   autoLayout: () => void;
   requestFitView: () => void;
   runMockExecution: () => void;
   resetExecution: () => void;
-  applyAgentPrompt: (prompt: string) => PromptResult;
+  applyAgentPrompt: (prompt: string) => Promise<void>;
   applyUpdateSkillToolCall: (args: { name: string; description: string; operations: Array<{ type: 'replace_document'; document: SkillDocument }> }) => void;
-  addCaseToDocument: (caseId: string) => void;
+  addCaseToDocument: (_caseId: string) => void;
   addCardOfType: (cardType: CardType) => void;
   setAppState: (state: StatusType) => void;
   selectNode: (id: string | null) => void;
@@ -68,6 +69,9 @@ interface AppState {
   setSidebarTab: (tab: SidebarTab) => void;
   setUtilityTab: (tab: UtilityTab) => void;
   addMessage: (message: ChatMessage) => void;
+  ensureMessage: (message: ChatMessage) => void;
+  appendMessageContent: (id: string, chunk: string, timestamp?: string) => void;
+  replaceMessageContent: (id: string, content: string, timestamp?: string) => void;
   clearMessages: () => void;
   updateNode: (id: string, updates: Partial<SkillNode>) => void;
   removeNode: (id: string) => void;
@@ -100,9 +104,47 @@ const appendTimeline = (
   updatedAt: new Date().toISOString(),
 });
 
+const withYamlState = (document: SkillDocument | null, yamlError: string | null = null) => ({
+  document,
+  rawSkillYaml: skillDocumentToYaml(document),
+  yamlError,
+});
+
+const isStatusMessage = (content: string) =>
+  /^(Starting .*|.*still running\.\.\.$|.*is responding\.$|.*completed\.$|Skill generation completed\.)$/.test(content.trim());
+
+const applyYamlArtifact = (
+  set: (partial: AppState | Partial<AppState> | ((state: AppState) => AppState | Partial<AppState>)) => void,
+  yamlText: string,
+  timelineMessage: string,
+) => {
+  try {
+    const parsed = parseSkillYaml(yamlText);
+    set((state) => ({
+      ...withYamlState(
+        appendTimeline(parsed, timelineMessage, 'success'),
+      ),
+      appState: 'draft_ready',
+      utilityTab: 'yaml',
+      fitViewVersion: state.fitViewVersion + 1,
+    }));
+    return true;
+  } catch (error) {
+    set({
+      yamlError: error instanceof Error ? error.message : 'Failed to parse assistant YAML.',
+      appState: 'error',
+      utilityTab: 'yaml',
+    });
+    return false;
+  }
+};
+
 export const useStore = create<AppState>((set, get) => ({
-  document: createStarterDocument(),
-  appState: 'editing',
+  document: null,
+  rawSkillYaml: '',
+  yamlError: null,
+  generationModel: 'qwen3-32b',
+  appState: 'idle',
   selectedNodeId: null,
   selectedEdgeId: null,
   sidebarTab: 'outline',
@@ -110,17 +152,20 @@ export const useStore = create<AppState>((set, get) => ({
   fitViewVersion: 0,
   messages: [],
 
-  setDocument: (doc) => set({ document: doc, appState: doc ? 'editing' : 'idle' }),
+  setDocument: (doc) => set({ ...withYamlState(doc), appState: doc ? 'editing' : 'idle' }),
+  setGenerationModel: (generationModel) => set({ generationModel }),
 
   updateDocument: (updates) =>
     set((state) => ({
-      document: state.document
-        ? {
-            ...state.document,
-            ...updates,
-            updatedAt: new Date().toISOString(),
-          }
-        : null,
+      ...withYamlState(
+        state.document
+          ? {
+              ...state.document,
+              ...updates,
+              updatedAt: new Date().toISOString(),
+            }
+          : null,
+      ),
     })),
 
   validateDocument: () =>
@@ -131,17 +176,19 @@ export const useStore = create<AppState>((set, get) => ({
 
       const result = runValidation(state.document);
       return {
-        document: appendTimeline(
-          {
-            ...state.document,
-            validation: {
-              errors: result.errors,
-              warnings: result.warnings,
-              lastValidatedAt: new Date().toISOString(),
+        ...withYamlState(
+          appendTimeline(
+            {
+              ...state.document,
+              validation: {
+                errors: result.errors,
+                warnings: result.warnings,
+                lastValidatedAt: new Date().toISOString(),
+              },
             },
-          },
           result.errors.length > 0 ? 'Validation found invalid action-card links.' : 'Validation passed for the action-card flow.',
           result.errors.length > 0 ? 'warning' : 'success',
+          ),
         ),
         appState: result.errors.length > 0 ? 'error' : 'ready_to_run',
         utilityTab: 'validation',
@@ -154,7 +201,7 @@ export const useStore = create<AppState>((set, get) => ({
         return state;
       }
       return {
-        document: appendTimeline(autoLayoutDocument(state.document), 'Applied card auto layout.', 'info'),
+        ...withYamlState(appendTimeline(autoLayoutDocument(state.document), 'Applied card auto layout.', 'info')),
         appState: 'editing',
       };
     }),
@@ -173,15 +220,17 @@ export const useStore = create<AppState>((set, get) => ({
     set({
       appState: 'mock_running',
       utilityTab: 'trace',
-      document: appendTimeline(
-        {
-          ...current,
-          execution: {
-            ...current.execution,
-            nodeStatuses: statuses,
+      ...withYamlState(
+        appendTimeline(
+          {
+            ...current,
+            execution: {
+              ...current.execution,
+              nodeStatuses: statuses,
+            },
           },
-        },
-        'Starting mock execution over next-action links.',
+          'Starting mock execution over next-action links.',
+        ),
       ),
     });
 
@@ -192,20 +241,22 @@ export const useStore = create<AppState>((set, get) => ({
             return state;
           }
           return {
-            document: appendTimeline(
-              {
-                ...state.document,
-                execution: {
-                  ...state.document.execution,
-                  nodeStatuses: {
-                    ...state.document.execution.nodeStatuses,
-                    [node.id]: 'running',
+            ...withYamlState(
+              appendTimeline(
+                {
+                  ...state.document,
+                  execution: {
+                    ...state.document.execution,
+                    nodeStatuses: {
+                      ...state.document.execution.nodeStatuses,
+                      [node.id]: 'running',
+                    },
                   },
                 },
-              },
-              `Running ${node.title}.`,
-              'info',
-              node.id,
+                `Running ${node.title}.`,
+                'info',
+                node.id,
+              ),
             ),
           };
         });
@@ -219,21 +270,23 @@ export const useStore = create<AppState>((set, get) => ({
           const terminalStatus = node.cardType === 'failure' ? 'error' : 'success';
           const isLast = index === ordered.length - 1;
           return {
-            document: appendTimeline(
-              {
-                ...state.document,
-                execution: {
-                  ...state.document.execution,
-                  lastRun: isLast ? new Date().toISOString() : state.document.execution.lastRun,
-                  nodeStatuses: {
-                    ...state.document.execution.nodeStatuses,
-                    [node.id]: terminalStatus,
+            ...withYamlState(
+              appendTimeline(
+                {
+                  ...state.document,
+                  execution: {
+                    ...state.document.execution,
+                    lastRun: isLast ? new Date().toISOString() : state.document.execution.lastRun,
+                    nodeStatuses: {
+                      ...state.document.execution.nodeStatuses,
+                      [node.id]: terminalStatus,
+                    },
                   },
                 },
-              },
-              `${node.title} completed as ${terminalStatus}.`,
-              terminalStatus === 'error' ? 'warning' : 'success',
-              node.id,
+                `${node.title} completed as ${terminalStatus}.`,
+                terminalStatus === 'error' ? 'warning' : 'success',
+                node.id,
+              ),
             ),
             appState: isLast ? (terminalStatus === 'error' ? 'error' : 'run_complete') : state.appState,
           };
@@ -248,33 +301,169 @@ export const useStore = create<AppState>((set, get) => ({
         return state;
       }
       return {
-        document: appendTimeline(
-          {
-            ...state.document,
-            execution: {
-              lastRun: undefined,
-              nodeStatuses: {},
-              timeline: [],
+        ...withYamlState(
+          appendTimeline(
+            {
+              ...state.document,
+              execution: {
+                lastRun: undefined,
+                nodeStatuses: {},
+                timeline: [],
+              },
             },
-          },
-          'Execution state reset.',
+            'Execution state reset.',
+          ),
         ),
         appState: 'editing',
       };
     }),
 
-  applyAgentPrompt: (prompt) => {
+  applyAgentPrompt: async (prompt) => {
     const current = get().document;
-    const completion = runSkillGenerator({ prompt, currentSkill: current });
-    const choice = completion.choices[0];
-    const toolCall = choice.message.tool_calls[0];
-    get().applyUpdateSkillToolCall(toolCall.function.arguments);
+    const { generationModel } = get();
 
-    return {
-      summary: choice.message.content,
-      toolCallName: toolCall.function.name,
-      model: completion.model,
-    };
+    if (generationModel === 'qwen3-32b') {
+      const simulated = runSkillGenerator({ prompt, currentSkill: current });
+      const choice = simulated.choices[0];
+      const toolCall = choice.message.tool_calls[0];
+      get().applyUpdateSkillToolCall(toolCall.function.arguments);
+      get().addMessage({
+        id: uuidv4(),
+        role: 'assistant',
+        content: `${choice.message.content}\n\nYAML skill applied to the workspace.`,
+        timestamp: new Date().toISOString(),
+        toolCalls: [{ name: toolCall.function.name, args: toolCall.function.arguments as Record<string, unknown> }],
+      });
+      return;
+    }
+
+    try {
+      let yamlApplied = false;
+      await streamSkillGeneration({
+        runId: uuidv4(),
+        messages: [...get().messages.map((message) => ({ role: message.role, content: message.content })), { role: 'user', content: prompt }],
+        current_skill_yaml: get().rawSkillYaml,
+        context: {
+          current_document_id: current?.id ?? null,
+        },
+      }, (event) => {
+        if (event.type === 'assistant_message_start') {
+          const messageId = typeof event.payload?.message_id === 'string' ? event.payload.message_id : uuidv4();
+          get().ensureMessage({
+            id: messageId,
+            role: 'assistant',
+            content: '',
+            timestamp: event.timestamp,
+            streaming: true,
+          });
+          return;
+        }
+
+        if (event.type === 'assistant_message_delta') {
+          const messageId = typeof event.payload?.message_id === 'string' ? event.payload.message_id : uuidv4();
+          const chunk = typeof event.payload?.content === 'string' ? event.payload.content : '';
+          if (!chunk) {
+            return;
+          }
+          get().appendMessageContent(messageId, chunk, event.timestamp);
+          return;
+        }
+
+        if (event.type === 'assistant_message_complete') {
+          const messageId = typeof event.payload?.message_id === 'string' ? event.payload.message_id : uuidv4();
+          const content = typeof event.payload?.content === 'string' ? event.payload.content : '';
+          if (content) {
+            get().replaceMessageContent(messageId, content, event.timestamp);
+          }
+          return;
+        }
+
+        if (event.type === 'assistant_message') {
+          const content = typeof event.payload?.content === 'string' ? event.payload.content : '';
+          if (!content.trim()) {
+            return;
+          }
+          get().addMessage({
+            id: typeof event.payload?.message_id === 'string' ? event.payload.message_id : uuidv4(),
+            role: 'assistant',
+            content,
+            timestamp: event.timestamp,
+            displayType: isStatusMessage(content) ? 'status' : 'message',
+          });
+          return;
+        }
+
+        if (event.type === 'tool_call') {
+          const name = typeof event.payload?.name === 'string' ? event.payload.name : 'backend_tool';
+          const args =
+            event.payload && typeof event.payload === 'object'
+              ? (((event.payload as Record<string, unknown>).args as Record<string, unknown> | undefined) ?? {})
+              : {};
+          const skillInstall =
+            name === 'install_skill_package' && typeof args.name === 'string'
+              ? [{ name: String(args.name), version: typeof args.version === 'string' ? args.version : 'latest' }]
+              : undefined;
+
+          get().addMessage({
+            id: uuidv4(),
+            role: 'assistant',
+            content: `Invoking \`${name}\`.`,
+            timestamp: event.timestamp,
+            toolCalls: [{ name, args }],
+            skillInstalls: skillInstall,
+          });
+          return;
+        }
+
+        if (event.type === 'tool_result') {
+          get().addMessage({
+            id: uuidv4(),
+            role: 'assistant',
+            content: typeof event.payload?.summary === 'string' ? event.payload.summary : 'Tool completed.',
+            timestamp: event.timestamp,
+          });
+          return;
+        }
+
+        if (event.type === 'yaml_draft') {
+          const content = typeof event.payload?.content === 'string' ? event.payload.content : '';
+          if (!content.trim()) {
+            return;
+          }
+          yamlApplied = applyYamlArtifact(set, content, 'Applied streamed YAML draft from backend agent.') || yamlApplied;
+          return;
+        }
+
+        if (event.type === 'yaml_final') {
+          const content = typeof event.payload?.content === 'string' ? event.payload.content : '';
+          if (!content.trim()) {
+            return;
+          }
+          yamlApplied = applyYamlArtifact(set, content, 'Applied final YAML artifact from backend agent.') || yamlApplied;
+          return;
+        }
+
+        if (event.type === 'run_complete') {
+          set({
+            appState: yamlApplied ? 'draft_ready' : 'ready_to_run',
+          });
+        }
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Network request failed.';
+      set({
+        yamlError: `Backend mode failed: ${detail}`,
+        appState: 'error',
+        utilityTab: 'yaml',
+      });
+      get().addMessage({
+        id: uuidv4(),
+        role: 'assistant',
+        content: `Backend agent failed: ${detail}`,
+        timestamp: new Date().toISOString(),
+      });
+      throw new Error(`Backend model failed: ${detail}. Switch to Qwen3-32B if the API is not running.`);
+    }
   },
 
   applyUpdateSkillToolCall: (args) =>
@@ -284,10 +473,12 @@ export const useStore = create<AppState>((set, get) => ({
         return state;
       }
       return {
-        document: appendTimeline(
-          replace.document,
-          `Applied update_skill tool call: ${args.description}`,
-          'success',
+        ...withYamlState(
+          appendTimeline(
+            replace.document,
+            `Applied update_skill tool call: ${args.description}`,
+            'success',
+          ),
         ),
         appState: 'draft_ready',
         utilityTab: 'log',
@@ -295,16 +486,7 @@ export const useStore = create<AppState>((set, get) => ({
       };
     }),
 
-  addCaseToDocument: (caseId) => {
-    const current = get().document;
-    const promptSeed = CASE_LIBRARY.find((item) => item.id === caseId)?.title ?? caseId;
-    const completion = runSkillGenerator({ prompt: promptSeed, currentSkill: current });
-    const toolCall = completion.choices[0]?.message.tool_calls[0];
-    if (toolCall) {
-      get().applyUpdateSkillToolCall(toolCall.function.arguments);
-    }
-    set({ sidebarTab: 'outline' });
-  },
+  addCaseToDocument: () => undefined,
 
   addCardOfType: (cardType) =>
     set((state) => {
@@ -318,14 +500,16 @@ export const useStore = create<AppState>((set, get) => ({
         y: 140 + row * 250,
       });
       return {
-        document: appendTimeline(
-          {
-            ...state.document,
-            nodes: [...state.document.nodes, node],
-          },
-          `Added ${cardType} card.`,
-          'info',
-          node.id,
+        ...withYamlState(
+          appendTimeline(
+            {
+              ...state.document,
+              nodes: [...state.document.nodes, node],
+            },
+            `Added ${cardType} card.`,
+            'info',
+            node.id,
+          ),
         ),
         selectedNodeId: node.id,
         selectedEdgeId: null,
@@ -341,6 +525,58 @@ export const useStore = create<AppState>((set, get) => ({
   setSidebarTab: (sidebarTab) => set({ sidebarTab }),
   setUtilityTab: (utilityTab) => set({ utilityTab }),
   addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+  ensureMessage: (message) =>
+    set((state) => ({
+      messages: state.messages.some((item) => item.id === message.id)
+        ? state.messages
+        : [...state.messages, message],
+    })),
+  appendMessageContent: (id, chunk, timestamp) =>
+    set((state) => {
+      if (!chunk) {
+        return state;
+      }
+      const existing = state.messages.find((message) => message.id === id);
+      if (!existing) {
+        return {
+          messages: [
+            ...state.messages,
+            {
+              id,
+              role: 'assistant',
+              content: chunk,
+              timestamp: timestamp ?? new Date().toISOString(),
+              streaming: true,
+            },
+          ],
+        };
+      }
+      return {
+        messages: state.messages.map((message) =>
+          message.id === id
+            ? {
+                ...message,
+                content: `${message.content}${chunk}`,
+                timestamp: timestamp ?? message.timestamp,
+                streaming: true,
+              }
+            : message,
+        ),
+      };
+    }),
+  replaceMessageContent: (id, content, timestamp) =>
+    set((state) => ({
+      messages: state.messages.map((message) =>
+        message.id === id
+          ? {
+              ...message,
+              content,
+              timestamp: timestamp ?? message.timestamp,
+              streaming: false,
+            }
+          : message,
+      ),
+    })),
   clearMessages: () => set({ messages: [] }),
 
   updateNode: (id, updates) =>
@@ -349,11 +585,11 @@ export const useStore = create<AppState>((set, get) => ({
         return state;
       }
       return {
-        document: {
+        ...withYamlState({
           ...state.document,
           nodes: state.document.nodes.map((node) => (node.id === id ? { ...node, ...updates } : node)),
           updatedAt: new Date().toISOString(),
-        },
+        }),
         appState: 'editing',
       };
     }),
@@ -364,15 +600,17 @@ export const useStore = create<AppState>((set, get) => ({
         return state;
       }
       return {
-        document: appendTimeline(
-          {
-            ...state.document,
-            nodes: state.document.nodes.filter((node) => node.id !== id),
-            edges: state.document.edges.filter((edge) => edge.fromNodeId !== id && edge.toNodeId !== id),
-          },
-          `Removed card ${id}.`,
-          'warning',
-          id,
+        ...withYamlState(
+          appendTimeline(
+            {
+              ...state.document,
+              nodes: state.document.nodes.filter((node) => node.id !== id),
+              edges: state.document.edges.filter((edge) => edge.fromNodeId !== id && edge.toNodeId !== id),
+            },
+            `Removed card ${id}.`,
+            'warning',
+            id,
+          ),
         ),
         selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
         selectedEdgeId: null,
@@ -385,14 +623,16 @@ export const useStore = create<AppState>((set, get) => ({
         return state;
       }
       return {
-        document: appendTimeline(
-          {
-            ...state.document,
-            edges: [...state.document.edges, edge],
-          },
-          edge.edgeType === 'data' ? 'Linked outputs to inputs.' : 'Linked next action path.',
-          'success',
-          edge.toNodeId,
+        ...withYamlState(
+          appendTimeline(
+            {
+              ...state.document,
+              edges: [...state.document.edges, edge],
+            },
+            edge.edgeType === 'data' ? 'Linked outputs to inputs.' : 'Linked next action path.',
+            'success',
+            edge.toNodeId,
+          ),
         ),
         selectedEdgeId: edge.id,
       };
@@ -406,18 +646,20 @@ export const useStore = create<AppState>((set, get) => ({
       const edge = createEdgeFromPorts(state.document, sourcePortId, targetPortId);
       if (!edge) {
         return {
-          document: appendTimeline(state.document, 'Rejected an invalid card link.', 'warning'),
+          ...withYamlState(appendTimeline(state.document, 'Rejected an invalid card link.', 'warning')),
         };
       }
       return {
-        document: appendTimeline(
-          {
-            ...state.document,
-            edges: [...state.document.edges, edge],
-          },
-          edge.edgeType === 'data' ? 'Added data link.' : 'Added next action link.',
-          'success',
-          edge.toNodeId,
+        ...withYamlState(
+          appendTimeline(
+            {
+              ...state.document,
+              edges: [...state.document.edges, edge],
+            },
+            edge.edgeType === 'data' ? 'Added data link.' : 'Added next action link.',
+            'success',
+            edge.toNodeId,
+          ),
         ),
         selectedEdgeId: edge.id,
       };
@@ -429,11 +671,11 @@ export const useStore = create<AppState>((set, get) => ({
         return state;
       }
       return {
-        document: {
+        ...withYamlState({
           ...state.document,
           edges: state.document.edges.map((edge) => (edge.id === id ? { ...edge, ...updates } : edge)),
           updatedAt: new Date().toISOString(),
-        },
+        }),
       };
     }),
 
@@ -443,13 +685,15 @@ export const useStore = create<AppState>((set, get) => ({
         return state;
       }
       return {
-        document: appendTimeline(
-          {
-            ...state.document,
-            edges: state.document.edges.filter((edge) => edge.id !== id),
-          },
-          `Removed link ${id}.`,
-          'warning',
+        ...withYamlState(
+          appendTimeline(
+            {
+              ...state.document,
+              edges: state.document.edges.filter((edge) => edge.id !== id),
+            },
+            `Removed link ${id}.`,
+            'warning',
+          ),
         ),
         selectedEdgeId: state.selectedEdgeId === id ? null : state.selectedEdgeId,
       };

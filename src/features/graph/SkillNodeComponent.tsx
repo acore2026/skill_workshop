@@ -1,4 +1,5 @@
 import React from 'react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Handle, Position } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import type { DataPort, NextActionPort, SkillNode } from '../../schemas/skill';
@@ -21,6 +22,14 @@ interface GraphNodeData {
 }
 
 const handleId = (portId: string, side: 'source' | 'target') => `${portId}::${side}`;
+const dataCardTypes = new Set<SkillNode['cardType']>([
+  'constant',
+  'user_container',
+  'device_container',
+  'network_container',
+  'app_container',
+]);
+const terminalCardTypes = new Set<SkillNode['cardType']>(['success', 'failure']);
 
 const DataLane: React.FC<{
   title: string;
@@ -64,102 +73,90 @@ const DataLane: React.FC<{
   </div>
 );
 
-const ConstantEditor: React.FC<{ data: GraphNodeData }> = ({ data }) => {
-  const valueType = String(data.properties.valueType ?? 'string');
-  const rawValue = data.properties.value;
+const AttributeEditor: React.FC<{ data: GraphNodeData }> = ({ data }) => {
+  const attributes = Object.entries(data.properties);
+
+  const syncAttributes = (entries: Array<[string, unknown]>) => {
+    const normalized = entries
+      .map(([key, value], index) => [key.trim() || `attribute_${index + 1}`, value] as [string, unknown])
+      .filter(([key]) => key.length > 0);
+
+    data.onUpdateNode(data.id, {
+      properties: Object.fromEntries(normalized),
+      outputs: normalized.map(([key, value], index) => ({
+        id: data.outputs[index]?.id ?? `${data.id}-output-${key.toLowerCase().replace(/\s+/g, '-')}`,
+        nodeId: data.id,
+        direction: 'output',
+        name: key,
+        dataType: typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : 'string',
+        required: false,
+        defaultValue: typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? value : String(value ?? ''),
+      })),
+    });
+  };
 
   return (
-    <div className="card-inline-editor">
-      <div className="inline-editor-row">
-        <label>Type</label>
-        <select
-          value={valueType}
-          onChange={(event) => {
-            const nextType = event.target.value as 'string' | 'number' | 'boolean';
-            const nextValue =
-              nextType === 'number' ? 0 : nextType === 'boolean' ? false : '';
-            data.onUpdateNode(data.id, {
-              properties: {
-                ...data.properties,
-                valueType: nextType,
-                value: nextValue,
-              },
-              outputs: data.outputs.map((port, index) =>
-                index === 0 ? { ...port, dataType: nextType, defaultValue: nextValue } : port,
-              ),
-            });
-          }}
+    <div className="card-inline-editor attribute-editor">
+      <div className="attribute-header">
+        <div className="lane-title">Attributes</div>
+        <button
+          type="button"
+          className="attribute-action-btn"
+          onClick={() => syncAttributes([...attributes, [`attribute_${attributes.length + 1}`, '']])}
         >
-          <option value="string">string</option>
-          <option value="number">number</option>
-          <option value="boolean">boolean</option>
-        </select>
+          <Plus size={12} />
+          Add
+        </button>
       </div>
 
-      <div className="inline-editor-row">
-        <label>Value</label>
-        {valueType === 'boolean' ? (
-          <select
-            value={String(Boolean(rawValue))}
-            onChange={(event) => {
-              const nextValue = event.target.value === 'true';
-              data.onUpdateNode(data.id, {
-                properties: {
-                  ...data.properties,
-                  value: nextValue,
-                },
-                outputs: data.outputs.map((port, index) =>
-                  index === 0 ? { ...port, defaultValue: nextValue } : port,
-                ),
-              });
-            }}
-          >
-            <option value="true">true</option>
-            <option value="false">false</option>
-          </select>
-        ) : (
-          <input
-            type={valueType === 'number' ? 'number' : 'text'}
-            value={rawValue === undefined || rawValue === null ? '' : String(rawValue)}
-            onChange={(event) => {
-              const nextValue = valueType === 'number' ? Number(event.target.value || 0) : event.target.value;
-              data.onUpdateNode(data.id, {
-                properties: {
-                  ...data.properties,
-                  value: nextValue,
-                },
-                outputs: data.outputs.map((port, index) =>
-                  index === 0 ? { ...port, defaultValue: nextValue } : port,
-                ),
-              });
-            }}
-          />
-        )}
+      <div className="attribute-list">
+        {attributes.map(([key, value], index) => {
+          const port = data.outputs[index];
+          return (
+            <div key={`${key}-${index}`} className="attribute-row">
+              <input
+                value={key}
+                onChange={(event) => {
+                  const nextEntries = [...attributes];
+                  nextEntries[index] = [event.target.value, value];
+                  syncAttributes(nextEntries);
+                }}
+                placeholder="Attribute"
+                className="attribute-key-input"
+              />
+              <input
+                value={String(value ?? '')}
+                onChange={(event) => {
+                  const nextEntries = [...attributes];
+                  nextEntries[index] = [key, event.target.value];
+                  syncAttributes(nextEntries);
+                }}
+                placeholder="Value"
+              />
+              {port && (
+                <Handle
+                  id={handleId(port.id, 'source')}
+                  type="source"
+                  position={Position.Right}
+                  className="node-handle data-handle output-handle"
+                  style={{ top: '50%', transform: 'translateY(-50%)' }}
+                />
+              )}
+              <button
+                type="button"
+                className="attribute-icon-btn"
+                onClick={() => syncAttributes(attributes.filter((_, entryIndex) => entryIndex !== index))}
+                aria-label={`Delete ${key}`}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 };
-
-const UserDataEditor: React.FC<{ data: GraphNodeData }> = ({ data }) => (
-  <div className="card-inline-editor userdata-editor">
-    {data.outputs.map((port) => (
-      <div key={port.id} className="inline-editor-row compact">
-        <label>{port.name}</label>
-        <input
-          value={String(data.properties[port.name] ?? '')}
-          onChange={(event) =>
-            data.onUpdateNode(data.id, {
-              properties: {
-                ...data.properties,
-                [port.name]: event.target.value,
-              },
-            })
-          }
-        />
-      </div>
-    ))}
-  </div>
-);
 
 const NextActionLane: React.FC<{ ports: NextActionPort[] }> = ({ ports }) => (
   <div className="next-lane">
@@ -194,6 +191,8 @@ const NextActionLane: React.FC<{ ports: NextActionPort[] }> = ({ ports }) => (
 
 const SkillNodeComponent: React.FC<NodeProps> = ({ data, selected }) => {
   const typedData = data as unknown as GraphNodeData;
+  const isDataCard = dataCardTypes.has(typedData.cardType);
+  const isTerminalCard = terminalCardTypes.has(typedData.cardType);
 
   return (
     <div className={`skill-node card-${typedData.cardType} ${selected ? 'selected' : ''}`} style={{ ['--node-tint' as string]: typedData.tint ?? '#eff6ff' }}>
@@ -215,15 +214,20 @@ const SkillNodeComponent: React.FC<NodeProps> = ({ data, selected }) => {
         </div>
       )}
 
-      <div className="skill-node-body">
-        <DataLane title="Inputs" ports={typedData.inputs} side={Position.Left} />
-        <DataLane title="Outputs" ports={typedData.outputs} side={Position.Right} />
-      </div>
+      {!isTerminalCard && (
+        <div className={`skill-node-body ${isDataCard ? 'data-only' : ''}`}>
+          {isDataCard ? null : (
+          <>
+            <DataLane title="Inputs" ports={typedData.inputs} side={Position.Left} />
+            <DataLane title="Outputs" ports={typedData.outputs} side={Position.Right} />
+          </>
+          )}
+        </div>
+      )}
 
-      {typedData.cardType === 'constant' && <ConstantEditor data={typedData} />}
-      {typedData.cardType === 'userdata' && <UserDataEditor data={typedData} />}
+      {isDataCard && <AttributeEditor data={typedData} />}
 
-      <NextActionLane ports={typedData.nextActions} />
+      {!isDataCard && <NextActionLane ports={typedData.nextActions} />}
     </div>
   );
 };

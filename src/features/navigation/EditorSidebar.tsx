@@ -1,7 +1,7 @@
 import React from 'react';
-import { Boxes, FileStack, Plus, Sparkles } from 'lucide-react';
+import { Boxes, FileStack, Plus } from 'lucide-react';
 import Button from '../../components/Button';
-import { CARD_LIBRARY, CASE_LIBRARY } from '../../lib/graph';
+import { CARD_LIBRARY } from '../../lib/graph';
 import { useStore } from '../../store/useStore';
 import type { SkillNode } from '../../schemas/skill';
 import './EditorSidebar.css';
@@ -23,7 +23,6 @@ const EditorSidebar: React.FC = () => {
     selectedNodeId,
     selectNode,
     addCardOfType,
-    addCaseToDocument,
   } = useStore();
 
   if (!document) {
@@ -80,64 +79,17 @@ const EditorSidebar: React.FC = () => {
             ))}
           </section>
 
-          <section className="sidebar-section">
-            <div className="sidebar-section-label">Saved Flows</div>
-            <div className="outline-list">
-              {CASE_LIBRARY.map((item) => (
-                <div key={item.id} className="outline-item static">
-                  <span>{item.title}</span>
-                  <span>{item.tags.join(', ')}</span>
-                </div>
-              ))}
-            </div>
-          </section>
         </div>
       ) : (
         <div className="editor-sidebar-body library-mode">
           <section className="sidebar-section">
-            <div className="sidebar-section-label">Flow Templates</div>
-            <div className="library-stack">
-              {CASE_LIBRARY.map((item) => (
-                <div key={item.id} className="library-card">
-                  <div className="library-card-head">
-                    <div>
-                      <div className="library-card-title">{item.title}</div>
-                      <div className="library-card-subtitle">Template</div>
-                    </div>
-                    <span className="library-card-badge">{item.tags[0]}</span>
-                  </div>
-                  <p>{item.summary}</p>
-                  <div className="library-card-footer">
-                    <span>{item.cards.length} cards</span>
-                    <Button type="button" size="sm" variant="secondary" onClick={() => addCaseToDocument(item.id)}>
-                      <Plus size={12} />
-                      Insert
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="sidebar-section">
-            <div className="sidebar-section-label">Card Palette</div>
+            <div className="sidebar-section-label">Card Library</div>
             <div className="library-stack">
               {CARD_LIBRARY.map((template) => (
                 <div key={template.id} className="library-card">
-                  <div className="library-card-head">
-                    <div>
-                      <div className="library-card-title">{template.title}</div>
-                      <div className="library-card-subtitle">{template.cardType}</div>
-                    </div>
-                    <span className="library-card-badge" style={{ backgroundColor: template.tint }}>
-                      {template.badge}
-                    </span>
-                  </div>
+                  <div className="library-card-title">{template.title}</div>
                   <p>{template.summary}</p>
                   <div className="library-card-footer">
-                    <span>
-                      {template.inputs.length} inputs / {template.outputs.length} outputs / {template.nextActions.length} next
-                    </span>
                     <Button type="button" size="sm" variant="secondary" onClick={() => addCardOfType(template.cardType)}>
                       <Plus size={12} />
                       Add
@@ -145,14 +97,6 @@ const EditorSidebar: React.FC = () => {
                   </div>
                 </div>
               ))}
-            </div>
-          </section>
-
-          <section className="sidebar-section tip-card">
-            <div className="sidebar-section-label">Generator</div>
-            <div className="tip-content">
-              <Sparkles size={16} />
-              <span>Use the left generator to update the flow, or add cards directly from the canvas controls.</span>
             </div>
           </section>
         </div>

@@ -149,7 +149,10 @@ const GraphCanvas: React.FC = () => {
           <button type="button" onClick={() => addCardOfType('branch')}>+ Branch</button>
           <button type="button" onClick={() => addCardOfType('parallel')}>+ Parallel</button>
           <button type="button" onClick={() => addCardOfType('constant')}>+ Constant</button>
-          <button type="button" onClick={() => addCardOfType('userdata')}>+ User Data</button>
+          <button type="button" onClick={() => addCardOfType('user_container')}>+ User Container</button>
+          <button type="button" onClick={() => addCardOfType('device_container')}>+ Device Container</button>
+          <button type="button" onClick={() => addCardOfType('network_container')}>+ Network Container</button>
+          <button type="button" onClick={() => addCardOfType('app_container')}>+ App Container</button>
         </div>
         <div className="graph-editor-stats">
           <span>{document.nodes.length} cards</span>

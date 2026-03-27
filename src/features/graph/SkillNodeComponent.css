@@ -1,42 +1,18 @@
 .skill-node {
-  --card-cut: 16px;
   width: 320px;
   position: relative;
-  border-radius: 18px;
-  background: transparent;
-  box-shadow: 0 20px 38px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
   overflow: visible;
 }
 
 .skill-node.selected {
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18), 0 20px 42px rgba(37, 99, 235, 0.12);
-}
-
-.skill-node::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 1px solid rgba(203, 213, 225, 0.95);
-  border-radius: 18px;
-  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
-  clip-path: polygon(
-    var(--card-cut) 0,
-    calc(100% - var(--card-cut)) 0,
-    100% 0,
-    100% calc(50% - var(--card-cut)),
-    calc(100% - var(--card-cut)) 50%,
-    100% calc(50% + var(--card-cut)),
-    100% 100%,
-    calc(100% - var(--card-cut)) 100%,
-    var(--card-cut) 100%,
-    0 100%,
-    0 calc(50% + var(--card-cut)),
-    var(--card-cut) 50%,
-    0 calc(50% - var(--card-cut)),
-    0 0
-  );
-  z-index: 0;
-  pointer-events: none;
+  border-color: rgba(96, 165, 250, 0.85);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.14), 0 16px 32px rgba(37, 99, 235, 0.12);
 }
 
 .skill-node-header {
@@ -47,7 +23,9 @@
   gap: 0.9rem;
   padding: 0.9rem 1rem 0.8rem;
   background: linear-gradient(135deg, var(--node-tint) 0%, rgba(255, 255, 255, 0.96) 90%);
-  border-bottom: 1px solid rgba(203, 213, 225, 0.78);
+  border-bottom: 1px solid rgba(203, 213, 225, 0.82);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
 }
 
 .skill-node-header-copy {
@@ -112,7 +90,6 @@
 
 .skill-node-sbi {
   position: relative;
-  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
@@ -130,17 +107,23 @@
 
 .skill-node-body {
   position: relative;
-  z-index: 1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.7rem;
-  padding: 0.85rem 0;
+  gap: 0.8rem;
+  padding: 0.9rem 1rem 0;
+}
+
+.skill-node-body.data-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.skill-node-body:empty {
+  display: none;
 }
 
 .lane-block,
 .next-lane {
   position: relative;
-  z-index: 1;
   padding: 0.75rem;
   border-radius: 14px;
   background: #f8fbff;
@@ -148,15 +131,11 @@
 }
 
 .lane-block.left {
-  margin-left: 0.35rem;
-  padding-left: 1rem;
   background: linear-gradient(180deg, #f8fbff 0%, #eff6ff 100%);
   border-color: #bfdbfe;
 }
 
 .lane-block.right {
-  margin-right: 0.35rem;
-  padding-right: 1rem;
   background: linear-gradient(180deg, #fffdf7 0%, #fff7ed 100%);
   border-color: #fed7aa;
 }
@@ -243,7 +222,7 @@
 }
 
 .next-lane {
-  margin: 0.35rem 1rem 1rem;
+  margin: auto 1rem 1rem;
   padding-top: 0.9rem;
   border-color: #fcd34d;
   background: linear-gradient(180deg, #fffdf3 0%, #fffbeb 100%);
@@ -251,17 +230,72 @@
 
 .card-inline-editor {
   position: relative;
-  z-index: 1;
-  margin: 0 1rem 1rem;
+  margin: 0.8rem 1rem 0;
   padding: 0.8rem 0.9rem;
   border-radius: 14px;
   background: #f8fafc;
   border: 1px solid #dbe5f2;
 }
 
+.attribute-editor,
 .userdata-editor {
   display: grid;
   gap: 0.45rem;
+}
+
+.attribute-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.attribute-header .lane-title {
+  margin-bottom: 0;
+  color: #9a3412;
+}
+
+.attribute-action-btn,
+.attribute-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.attribute-action-btn {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.attribute-icon-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.attribute-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.attribute-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) 28px;
+  align-items: center;
+  gap: 0.5rem;
+  padding-right: 1.1rem;
+}
+
+.attribute-key-input {
+  font-weight: 700;
 }
 
 .inline-editor-row {
@@ -334,12 +368,9 @@
 }
 
 .lane-row .react-flow__handle-right,
-.next-row .react-flow__handle-right {
+.next-row .react-flow__handle-right,
+.attribute-row .react-flow__handle-right {
   right: -10px;
-}
-
-.next-lane {
-  margin: 0 0.9rem 1rem;
 }
 
 .lane-block::before,
