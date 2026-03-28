@@ -7,6 +7,17 @@ import {
   getExecutionOrder,
   validateDocument as runValidation,
 } from '../lib/graph';
+import {
+  extractFunctionCallsFromMarkup,
+  extractYamlBlockFromText,
+  getADKDisplayText,
+  getADKMessageId,
+  getADKStage,
+  getSkillInstallFromFunctionCall,
+  stripYamlBlockFromText,
+  summarizeFunctionResponse,
+  type ADKSessionEventPayload,
+} from '../lib/adkEvents';
 import { streamSkillGeneration } from '../lib/api';
 import { runSkillGenerator } from '../lib/skillGenerator';
 import { parseSkillYaml, skillDocumentToYaml } from '../lib/skillYaml';
@@ -347,99 +358,98 @@ export const useStore = create<AppState>((set, get) => ({
           current_document_id: current?.id ?? null,
         },
       }, (event) => {
-        if (event.type === 'assistant_message_start') {
-          const messageId = typeof event.payload?.message_id === 'string' ? event.payload.message_id : uuidv4();
-          get().ensureMessage({
-            id: messageId,
-            role: 'assistant',
-            content: '',
-            timestamp: event.timestamp,
-            streaming: true,
-          });
-          return;
-        }
+        if (event.type === 'session_event') {
+          const payload = (event.payload ?? {}) as ADKSessionEventPayload;
+          const rawText = typeof payload.text === 'string' ? payload.text : '';
+          const rawContent = getADKDisplayText(payload);
+          const messageId = getADKMessageId(payload);
+          const stage = getADKStage(payload);
+          const isPartial = Boolean(payload.partial);
+          const isFinal = Boolean(payload.final_response || payload.turn_complete);
+          const yamlFromContent = stage === 'draft' ? extractYamlBlockFromText(rawContent) : '';
+          const content = yamlFromContent ? stripYamlBlockFromText(rawContent) : rawContent;
+          const fallbackFunctionCalls = Array.isArray(payload.function_calls) && payload.function_calls.length > 0
+            ? []
+            : extractFunctionCallsFromMarkup(rawText);
 
-        if (event.type === 'assistant_message_delta') {
-          const messageId = typeof event.payload?.message_id === 'string' ? event.payload.message_id : uuidv4();
-          const chunk = typeof event.payload?.content === 'string' ? event.payload.content : '';
-          if (!chunk) {
-            return;
+          if (Array.isArray(payload.function_calls)) {
+            for (const call of payload.function_calls) {
+              const skillInstall = getSkillInstallFromFunctionCall(call);
+              get().addMessage({
+                id: uuidv4(),
+                role: 'assistant',
+                content: `Invoking \`${call.name}\`.`,
+                timestamp: event.timestamp,
+                toolCalls: [{ name: call.name, args: call.args ?? {} }],
+                skillInstalls: skillInstall ? [skillInstall] : undefined,
+              });
+            }
           }
-          get().appendMessageContent(messageId, chunk, event.timestamp);
-          return;
-        }
 
-        if (event.type === 'assistant_message_complete') {
-          const messageId = typeof event.payload?.message_id === 'string' ? event.payload.message_id : uuidv4();
-          const content = typeof event.payload?.content === 'string' ? event.payload.content : '';
+          for (const call of fallbackFunctionCalls) {
+            const skillInstall = getSkillInstallFromFunctionCall(call);
+            get().addMessage({
+              id: uuidv4(),
+              role: 'assistant',
+              content: `Invoking \`${call.name}\`.`,
+              timestamp: event.timestamp,
+              toolCalls: [{ name: call.name, args: call.args ?? {} }],
+              skillInstalls: skillInstall ? [skillInstall] : undefined,
+            });
+          }
+
+          if (Array.isArray(payload.function_responses)) {
+            for (const response of payload.function_responses) {
+              get().addMessage({
+                id: uuidv4(),
+                role: 'assistant',
+                content: summarizeFunctionResponse(response),
+                timestamp: event.timestamp,
+              });
+            }
+          }
+
           if (content) {
-            get().replaceMessageContent(messageId, content, event.timestamp);
+            if (isPartial) {
+              get().ensureMessage({
+                id: messageId,
+                role: 'assistant',
+                content: '',
+                timestamp: event.timestamp,
+                streaming: true,
+              });
+              get().appendMessageContent(messageId, content, event.timestamp);
+            } else if (isFinal) {
+              if (content) {
+                get().ensureMessage({
+                  id: messageId,
+                  role: 'assistant',
+                  content: '',
+                  timestamp: event.timestamp,
+                  streaming: true,
+                });
+                get().replaceMessageContent(messageId, content, event.timestamp);
+              }
+            } else {
+              get().addMessage({
+                id: messageId,
+                role: 'assistant',
+                content,
+                timestamp: event.timestamp,
+                displayType: isStatusMessage(content) ? 'status' : 'message',
+              });
+            }
           }
-          return;
-        }
 
-        if (event.type === 'assistant_message') {
-          const content = typeof event.payload?.content === 'string' ? event.payload.content : '';
-          if (!content.trim()) {
-            return;
+          const yamlFromState = typeof payload.state_delta?.skill_yaml_draft === 'string' ? payload.state_delta.skill_yaml_draft : '';
+          const yamlText = yamlFromState || yamlFromContent;
+          if (yamlText.trim() && (stage === 'draft' || isFinal)) {
+            yamlApplied = applyYamlArtifact(
+              set,
+              yamlText,
+              yamlApplied ? 'Applied updated YAML draft from backend agent.' : 'Applied YAML draft from backend agent.',
+            ) || yamlApplied;
           }
-          get().addMessage({
-            id: typeof event.payload?.message_id === 'string' ? event.payload.message_id : uuidv4(),
-            role: 'assistant',
-            content,
-            timestamp: event.timestamp,
-            displayType: isStatusMessage(content) ? 'status' : 'message',
-          });
-          return;
-        }
-
-        if (event.type === 'tool_call') {
-          const name = typeof event.payload?.name === 'string' ? event.payload.name : 'backend_tool';
-          const args =
-            event.payload && typeof event.payload === 'object'
-              ? (((event.payload as Record<string, unknown>).args as Record<string, unknown> | undefined) ?? {})
-              : {};
-          const skillInstall =
-            name === 'install_skill_package' && typeof args.name === 'string'
-              ? [{ name: String(args.name), version: typeof args.version === 'string' ? args.version : 'latest' }]
-              : undefined;
-
-          get().addMessage({
-            id: uuidv4(),
-            role: 'assistant',
-            content: `Invoking \`${name}\`.`,
-            timestamp: event.timestamp,
-            toolCalls: [{ name, args }],
-            skillInstalls: skillInstall,
-          });
-          return;
-        }
-
-        if (event.type === 'tool_result') {
-          get().addMessage({
-            id: uuidv4(),
-            role: 'assistant',
-            content: typeof event.payload?.summary === 'string' ? event.payload.summary : 'Tool completed.',
-            timestamp: event.timestamp,
-          });
-          return;
-        }
-
-        if (event.type === 'yaml_draft') {
-          const content = typeof event.payload?.content === 'string' ? event.payload.content : '';
-          if (!content.trim()) {
-            return;
-          }
-          yamlApplied = applyYamlArtifact(set, content, 'Applied streamed YAML draft from backend agent.') || yamlApplied;
-          return;
-        }
-
-        if (event.type === 'yaml_final') {
-          const content = typeof event.payload?.content === 'string' ? event.payload.content : '';
-          if (!content.trim()) {
-            return;
-          }
-          yamlApplied = applyYamlArtifact(set, content, 'Applied final YAML artifact from backend agent.') || yamlApplied;
           return;
         }
 
