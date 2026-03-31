@@ -1,68 +1,59 @@
-import React, { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import Button from '../../components/Button';
 import { useStore } from '../../store/useStore';
+import type { UtilityTab } from '../../store/useStore';
 import './UtilityPanel.css';
 
-const tabs = [
-  { id: 'log', label: 'Log' },
-  { id: 'validation', label: 'Validation' },
-  { id: 'search', label: 'Search' },
-  { id: 'trace', label: 'Trace' },
-  { id: 'yaml', label: 'YAML' },
-] as const;
+interface UtilityPanelProps {
+  activeTab?: UtilityTab;
+  showTabs?: boolean;
+}
 
-const UtilityPanel: React.FC = () => {
-  const { document, rawSkillYaml, yamlError, utilityTab, setUtilityTab, runMockExecution, resetExecution, validateDocument, appState } = useStore();
-  const [query, setQuery] = useState('');
+const splitMarkdownFrontMatter = (markdown: string) => {
+  const match = markdown.match(/^---\n([\s\S]*?)\n---\n?/);
+  if (!match) {
+    return { frontMatter: '', body: markdown };
+  }
+  return {
+    frontMatter: `---\n${match[1]}\n---`,
+    body: markdown.slice(match[0].length).trimStart(),
+  };
+};
 
-  const searchResults = useMemo(() => {
-    if (!document || !query.trim()) {
-      return [];
-    }
+const UtilityPanel: React.FC<UtilityPanelProps> = ({ activeTab, showTabs = true }) => {
+  const { document, rawSkillMarkdown, markdownError, utilityTab, setUtilityTab, validateDocument } = useStore();
+  const [markdownView, setMarkdownView] = useState<'preview' | 'source'>('preview');
+  const resolvedTab = activeTab ?? utilityTab;
+  const { frontMatter, body } = splitMarkdownFrontMatter(rawSkillMarkdown);
 
-    const q = query.toLowerCase();
-    return document.nodes.filter(
-      (node) =>
-        node.title.toLowerCase().includes(q) ||
-        node.summary.toLowerCase().includes(q) ||
-        node.cardType.toLowerCase().includes(q) ||
-        [...node.inputs, ...node.outputs].some((port) => port.name.toLowerCase().includes(q)) ||
-        node.nextActions.some((port) => port.label.toLowerCase().includes(q)),
-    );
-  }, [document, query]);
-
-  if (!document) {
+  if (!document && !rawSkillMarkdown.trim()) {
     return null;
   }
 
   return (
     <div className="utility-panel">
-      <div className="utility-toolbar">
-        <div className="utility-tabs">
-          {tabs.map((tab) => (
-            <button key={tab.id} type="button" className={utilityTab === tab.id ? 'is-active' : ''} onClick={() => setUtilityTab(tab.id)}>
-              {tab.label}
-            </button>
-          ))}
+      {showTabs ? (
+        <div className="utility-toolbar">
+          <div className="utility-tabs">
+            {(['log', 'validation', 'markdown'] as const).map((tab) => (
+              <button key={tab} type="button" className={resolvedTab === tab ? 'is-active' : ''} onClick={() => setUtilityTab(tab)}>
+                {tab === 'log' ? 'Log' : tab === 'validation' ? 'Validation' : 'Markdown'}
+              </button>
+            ))}
+          </div>
+          <div className="utility-actions">
+            <Button size="sm" variant="secondary" onClick={validateDocument}>
+              Validate
+            </Button>
+          </div>
         </div>
-        <div className="utility-actions">
-          <Button size="sm" variant="secondary" onClick={validateDocument}>
-            Validate
-          </Button>
-          <Button size="sm" variant="primary" onClick={runMockExecution} disabled={appState === 'mock_running'}>
-            Run
-          </Button>
-          <Button size="sm" variant="ghost" onClick={resetExecution}>
-            Reset
-          </Button>
-        </div>
-      </div>
+      ) : null}
 
       <div className="utility-body">
-        {utilityTab === 'log' && (
+        {resolvedTab === 'log' && (
           <div className="utility-list">
-            {document.execution.timeline.length === 0 ? (
+            {!document || document.execution.timeline.length === 0 ? (
               <div className="utility-empty">No log entries yet.</div>
             ) : (
               document.execution.timeline.map((item) => (
@@ -78,11 +69,11 @@ const UtilityPanel: React.FC = () => {
           </div>
         )}
 
-        {utilityTab === 'validation' && (
+        {resolvedTab === 'validation' && (
           <div className="utility-columns">
             <div>
               <div className="utility-column-label">Errors</div>
-              {document.validation.errors.length === 0 ? (
+              {!document || document.validation.errors.length === 0 ? (
                 <div className="utility-empty small">No blocking errors.</div>
               ) : (
                 document.validation.errors.map((error) => (
@@ -94,7 +85,7 @@ const UtilityPanel: React.FC = () => {
             </div>
             <div>
               <div className="utility-column-label">Warnings</div>
-              {document.validation.warnings.length === 0 ? (
+              {!document || document.validation.warnings.length === 0 ? (
                 <div className="utility-empty small">No warnings.</div>
               ) : (
                 document.validation.warnings.map((warning) => (
@@ -107,55 +98,28 @@ const UtilityPanel: React.FC = () => {
           </div>
         )}
 
-        {utilityTab === 'search' && (
-          <div className="utility-search">
-            <label className="utility-search-box">
-              <Search size={14} />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search cards, lanes, or case terms" />
-            </label>
-            <div className="utility-list">
-              {!query.trim() ? (
-                <div className="utility-empty">Enter a query to search the graph.</div>
-              ) : searchResults.length === 0 ? (
-                <div className="utility-empty">No action cards matched that query.</div>
-              ) : (
-                searchResults.map((node) => (
-                  <div key={node.id} className="utility-entry">
-                    <div className="utility-entry-head">
-                      <span>{node.title}</span>
-                      <span>{node.cardType}</span>
-                    </div>
-                    <div>{[...node.inputs.map((port) => port.name), ...node.outputs.map((port) => port.name), ...node.nextActions.map((port) => port.label)].join(', ')}</div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {utilityTab === 'trace' && (
-          <div className="utility-list">
-            {document.nodes.map((node) => (
-              <div key={node.id} className="trace-row">
-                <div>
-                  <div className="trace-title">{node.title}</div>
-                  <div className="trace-meta">{node.cardType}</div>
-                </div>
-                <span className={`trace-status ${document.execution.nodeStatuses[node.id] ?? 'idle'}`}>
-                  {document.execution.nodeStatuses[node.id] ?? 'idle'}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {utilityTab === 'yaml' && (
+        {resolvedTab === 'markdown' && (
           <div className="utility-yaml">
-            {yamlError && <div className="utility-entry level-error">YAML parse error: {yamlError}</div>}
-            {rawSkillYaml.trim() ? (
-              <textarea readOnly value={rawSkillYaml} className="utility-yaml-viewer" />
+            {markdownError && <div className="utility-entry level-error">Markdown error: {markdownError}</div>}
+            <div className="utility-subtabs">
+              <button type="button" className={markdownView === 'preview' ? 'is-active' : ''} onClick={() => setMarkdownView('preview')}>
+                Preview
+              </button>
+              <button type="button" className={markdownView === 'source' ? 'is-active' : ''} onClick={() => setMarkdownView('source')}>
+                Source
+              </button>
+            </div>
+            {rawSkillMarkdown.trim() ? (
+              markdownView === 'source' ? (
+                <textarea readOnly value={rawSkillMarkdown} className="utility-yaml-viewer" />
+              ) : (
+                <div className="utility-markdown-preview">
+                  {frontMatter ? <pre className="utility-markdown-frontmatter">{frontMatter}</pre> : null}
+                  {body ? <ReactMarkdown>{body}</ReactMarkdown> : null}
+                </div>
+              )
             ) : (
-              <div className="utility-empty">No YAML skill document available yet.</div>
+              <div className="utility-empty">No markdown skill document available yet.</div>
             )}
           </div>
         )}

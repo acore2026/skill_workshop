@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Waypoints,
   PanelRightClose,
@@ -6,13 +6,11 @@ import {
   CheckCircle2,
   LayoutGrid,
   Maximize2,
-  Play,
   Search,
   Settings2,
   Undo2,
   Redo2,
   Save,
-  Library,
   SlidersHorizontal,
   SquarePen,
   Wrench,
@@ -21,21 +19,22 @@ import Button from '../components/Button';
 import StatusPill from '../components/StatusPill';
 import GraphEditor from '../features/graph/GraphEditor';
 import InspectorPanel from '../features/inspector/InspectorPanel';
-import EditorSidebar from '../features/navigation/EditorSidebar';
 import AgentChatbox from '../features/prompt/AgentChatbox';
 import UtilityPanel from '../features/utility/UtilityPanel';
 import { useStore } from '../store/useStore';
 import './Workspace.css';
+
+type SidePanelTab = 'inspector' | 'log' | 'validation' | 'markdown';
 
 const Workspace: React.FC = () => {
   const {
     appState,
     autoLayout,
     requestFitView,
-    runMockExecution,
     validateDocument,
     selectedNodeId,
     selectedEdgeId,
+    setUtilityTab,
   } = useStore();
   const readNumberPreference = (key: string, fallback: number, min: number, max: number) => {
     if (typeof window === 'undefined') {
@@ -60,12 +59,14 @@ const Workspace: React.FC = () => {
   });
   const [chatCollapsed, setChatCollapsed] = useState(() => readBooleanPreference('skill-workshop-chat-collapsed'));
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(() => readBooleanPreference('skill-workshop-sidepanel-collapsed'));
-  const [sidePanelTab, setSidePanelTab] = useState<'library' | 'inspector' | 'utility'>(() => {
+  const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>(() => {
     if (typeof window === 'undefined') {
-      return 'library';
+      return 'inspector';
     }
     const savedValue = window.localStorage.getItem('skill-workshop-sidepanel-tab');
-    return savedValue === 'inspector' || savedValue === 'utility' ? savedValue : 'library';
+    return savedValue === 'log' || savedValue === 'validation' || savedValue === 'markdown' || savedValue === 'inspector'
+      ? savedValue
+      : 'inspector';
   });
 
   const toggleChat = () => {
@@ -88,12 +89,15 @@ const Workspace: React.FC = () => {
     });
   };
 
-  const handleSidePanelTabChange = (tab: 'library' | 'inspector' | 'utility') => {
+  const handleSidePanelTabChange = useCallback((tab: SidePanelTab) => {
     setSidePanelTab(tab);
     if (typeof window !== 'undefined') {
       window.localStorage.setItem('skill-workshop-sidepanel-tab', tab);
     }
-  };
+    if (tab === 'log' || tab === 'validation' || tab === 'markdown') {
+      setUtilityTab(tab);
+    }
+  }, [setUtilityTab]);
 
   useEffect(() => {
     if (sidePanelCollapsed) {
@@ -105,7 +109,7 @@ const Workspace: React.FC = () => {
       }, 0);
       return () => window.clearTimeout(timerId);
     }
-  }, [selectedNodeId, selectedEdgeId, sidePanelCollapsed]);
+  }, [selectedNodeId, selectedEdgeId, sidePanelCollapsed, handleSidePanelTabChange]);
 
   const handleChatResizeStart = (event: React.MouseEvent<HTMLDivElement>) => {
     if (chatCollapsed) {
@@ -190,10 +194,6 @@ const Workspace: React.FC = () => {
             <Search size={14} />
             Search
           </Button>
-          <Button size="sm" variant="primary" onClick={runMockExecution} disabled={appState === 'mock_running'}>
-            <Play size={14} />
-            Run
-          </Button>
           <Button size="sm" variant="secondary" onClick={autoLayout}>
             <LayoutGrid size={14} />
             Auto Layout
@@ -261,17 +261,21 @@ const Workspace: React.FC = () => {
               <>
                 <div className="workspace-panel-header workspace-panel-switches">
                 <div className="workspace-side-panel-tabs">
-                  <button type="button" className={sidePanelTab === 'library' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('library')}>
-                    <Library size={14} />
-                    Library
-                  </button>
                   <button type="button" className={sidePanelTab === 'inspector' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('inspector')}>
                     <SquarePen size={14} />
                     Inspector
                   </button>
-                  <button type="button" className={sidePanelTab === 'utility' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('utility')}>
+                  <button type="button" className={sidePanelTab === 'log' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('log')}>
                     <SlidersHorizontal size={14} />
-                    Utility
+                    Log
+                  </button>
+                  <button type="button" className={sidePanelTab === 'validation' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('validation')}>
+                    <CheckCircle2 size={14} />
+                    Validation
+                  </button>
+                  <button type="button" className={sidePanelTab === 'markdown' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('markdown')}>
+                    <Wrench size={14} />
+                    Markdown
                   </button>
                 </div>
                   <button type="button" className="workspace-panel-toggle" onClick={toggleSidePanel} aria-label="Collapse side panel">
@@ -279,9 +283,10 @@ const Workspace: React.FC = () => {
                   </button>
                 </div>
                 <div className="workspace-side-panel-body">
-                  {sidePanelTab === 'library' && <EditorSidebar />}
                   {sidePanelTab === 'inspector' && <InspectorPanel />}
-                  {sidePanelTab === 'utility' && <UtilityPanel />}
+                  {sidePanelTab === 'log' && <UtilityPanel activeTab="log" showTabs={false} />}
+                  {sidePanelTab === 'validation' && <UtilityPanel activeTab="validation" showTabs={false} />}
+                  {sidePanelTab === 'markdown' && <UtilityPanel activeTab="markdown" showTabs={false} />}
                 </div>
               </>
             )}

@@ -3,6 +3,7 @@
   height: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  position: relative;
 }
 
 .graph-editor-chrome {
@@ -39,6 +40,9 @@
 }
 
 .graph-editor-quick-add button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   padding: 0.35rem 0.65rem;
   border-radius: 999px;
   border: 1px solid var(--border-base);
@@ -85,4 +89,128 @@
   border-radius: 14px !important;
   box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08) !important;
   overflow: hidden;
+}
+
+.graph-tool-drawer {
+  position: absolute;
+  top: 4.6rem;
+  left: 1rem;
+  width: min(380px, calc(100% - 2rem));
+  max-height: calc(100% - 5.4rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.95rem;
+  border: 1px solid rgba(203, 213, 225, 0.96);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 22px 42px rgba(15, 23, 42, 0.14);
+  z-index: 8;
+}
+
+.graph-tool-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: flex-start;
+}
+
+.graph-tool-drawer-title {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.graph-tool-drawer-subtitle {
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.graph-tool-drawer-close {
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid var(--border-base);
+  border-radius: 999px;
+  background: white;
+  color: var(--text-secondary);
+}
+
+.graph-tool-search {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid var(--border-base);
+  border-radius: 12px;
+  background: white;
+  padding: 0.72rem 0.85rem;
+}
+
+.graph-tool-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  color: var(--text-primary);
+}
+
+.graph-tool-list {
+  display: grid;
+  gap: 0.75rem;
+  overflow: auto;
+}
+
+.graph-tool-card {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid var(--border-base);
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.graph-tool-card-title {
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.graph-tool-card p {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.graph-tool-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.graph-tool-card-meta span {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+}
+
+.graph-tool-card-meta button {
+  padding: 0.38rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-base);
+  background: #f8fbff;
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.graph-tool-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  border: 1px dashed var(--border-base);
+  border-radius: 14px;
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
 }
