@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Waypoints,
   PanelRightClose,
   PanelRightOpen,
   CheckCircle2,
@@ -16,11 +15,12 @@ import {
   Wrench,
 } from 'lucide-react';
 import Button from '../components/Button';
-import StatusPill from '../components/StatusPill';
 import GraphEditor from '../features/graph/GraphEditor';
 import InspectorPanel from '../features/inspector/InspectorPanel';
 import AgentChatbox from '../features/prompt/AgentChatbox';
 import UtilityPanel from '../features/utility/UtilityPanel';
+import AppShell from '../components/AppShell';
+import NavHeader from '../components/NavHeader';
 import { useStore } from '../store/useStore';
 import './Workspace.css';
 
@@ -28,7 +28,6 @@ type SidePanelTab = 'inspector' | 'log' | 'validation' | 'markdown';
 
 const Workspace: React.FC = () => {
   const {
-    appState,
     autoLayout,
     requestFitView,
     validateDocument,
@@ -36,14 +35,7 @@ const Workspace: React.FC = () => {
     selectedEdgeId,
     setUtilityTab,
   } = useStore();
-  const readNumberPreference = (key: string, fallback: number, min: number, max: number) => {
-    if (typeof window === 'undefined') {
-      return fallback;
-    }
-    const savedValue = window.localStorage.getItem(key);
-    const parsed = savedValue ? Number(savedValue) : NaN;
-    return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
-  };
+
   const readBooleanPreference = (key: string, fallback = false) => {
     if (typeof window === 'undefined') {
       return fallback;
@@ -51,12 +43,7 @@ const Workspace: React.FC = () => {
     const savedValue = window.localStorage.getItem(key);
     return savedValue === null ? fallback : savedValue === 'true';
   };
-  const [chatPanelWidth, setChatPanelWidth] = useState(() => {
-    return readNumberPreference('skill-workshop-chat-width', 420, 340, 620);
-  });
-  const [sidePanelWidth, setSidePanelWidth] = useState(() => {
-    return readNumberPreference('skill-workshop-sidepanel-width', 360, 280, 520);
-  });
+
   const [chatCollapsed, setChatCollapsed] = useState(() => readBooleanPreference('skill-workshop-chat-collapsed'));
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(() => readBooleanPreference('skill-workshop-sidepanel-collapsed'));
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>(() => {
@@ -111,189 +98,107 @@ const Workspace: React.FC = () => {
     }
   }, [selectedNodeId, selectedEdgeId, sidePanelCollapsed, handleSidePanelTabChange]);
 
-  const handleChatResizeStart = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (chatCollapsed) {
-      return;
-    }
+  const header = (
+    <>
+      <NavHeader />
+      <div className="toolbar-actions">
+        <Button size="sm" variant="secondary">
+          <Save size={14} />
+          Save
+        </Button>
+        <Button size="sm" variant="ghost" disabled>
+          <Undo2 size={14} />
+          Undo
+        </Button>
+        <Button size="sm" variant="ghost" disabled>
+          <Redo2 size={14} />
+          Redo
+        </Button>
+        <Button size="sm" variant="secondary">
+          <Search size={14} />
+          Search
+        </Button>
+        <Button size="sm" variant="secondary" onClick={autoLayout}>
+          <LayoutGrid size={14} />
+          Auto Layout
+        </Button>
+        <Button size="sm" variant="secondary" onClick={requestFitView}>
+          <Maximize2 size={14} />
+          Zoom To Fit
+        </Button>
+        <Button size="sm" variant="secondary" onClick={validateDocument}>
+          <CheckCircle2 size={14} />
+          Validate
+        </Button>
+        <Button size="sm" variant="ghost">
+          <Settings2 size={14} />
+          Settings
+        </Button>
+      </div>
+    </>
+  );
 
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = chatPanelWidth;
-
-    const handlePointerMove = (moveEvent: MouseEvent) => {
-      const nextWidth = Math.max(340, Math.min(620, startWidth + (moveEvent.clientX - startX)));
-      setChatPanelWidth(nextWidth);
-      window.localStorage.setItem('skill-workshop-chat-width', String(nextWidth));
-    };
-
-    const handlePointerUp = () => {
-      window.removeEventListener('mousemove', handlePointerMove);
-      window.removeEventListener('mouseup', handlePointerUp);
-    };
-
-    window.addEventListener('mousemove', handlePointerMove);
-    window.addEventListener('mouseup', handlePointerUp);
-  };
-
-  const handleSideResizeStart = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (sidePanelCollapsed) {
-      return;
-    }
-
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = sidePanelWidth;
-
-    const handlePointerMove = (moveEvent: MouseEvent) => {
-      const nextWidth = Math.max(280, Math.min(520, startWidth - (moveEvent.clientX - startX)));
-      setSidePanelWidth(nextWidth);
-      window.localStorage.setItem('skill-workshop-sidepanel-width', String(nextWidth));
-    };
-
-    const handlePointerUp = () => {
-      window.removeEventListener('mousemove', handlePointerMove);
-      window.removeEventListener('mouseup', handlePointerUp);
-    };
-
-    window.addEventListener('mousemove', handlePointerMove);
-    window.addEventListener('mouseup', handlePointerUp);
-  };
+  const sidePanel = (
+    <div className={`workspace-side-panel workspace-panel-shell ${sidePanelCollapsed ? 'is-collapsed' : ''}`}>
+      {sidePanelCollapsed ? (
+        <button
+          type="button"
+          className="workspace-side-collapsed-rail"
+          onClick={toggleSidePanel}
+          aria-label="Expand skill editor"
+          title="Expand skill editor"
+        >
+          <Wrench size={18} />
+          <span>Skill Editor</span>
+          <PanelRightOpen size={16} />
+        </button>
+      ) : (
+        <>
+          <div className="workspace-panel-header workspace-panel-switches">
+            <div className="workspace-side-panel-tabs">
+              <button type="button" className={sidePanelTab === 'inspector' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('inspector')}>
+                <SquarePen size={14} />
+                Inspector
+              </button>
+              <button type="button" className={sidePanelTab === 'log' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('log')}>
+                <SlidersHorizontal size={14} />
+                Log
+              </button>
+              <button type="button" className={sidePanelTab === 'validation' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('validation')}>
+                <CheckCircle2 size={14} />
+                Validation
+              </button>
+              <button type="button" className={sidePanelTab === 'markdown' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('markdown')}>
+                <Wrench size={14} />
+                Markdown
+              </button>
+            </div>
+            <button type="button" className="workspace-panel-toggle" onClick={toggleSidePanel} aria-label="Collapse side panel">
+              <PanelRightClose size={15} />
+            </button>
+          </div>
+          <div className="workspace-side-panel-body">
+            {sidePanelTab === 'inspector' && <InspectorPanel />}
+            {sidePanelTab === 'log' && <UtilityPanel activeTab="log" showTabs={false} />}
+            {sidePanelTab === 'validation' && <UtilityPanel activeTab="validation" showTabs={false} />}
+            {sidePanelTab === 'markdown' && <UtilityPanel activeTab="markdown" showTabs={false} />}
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   return (
-    <div
-      className={`workspace-shell ${chatCollapsed ? 'chat-collapsed' : ''}`}
-      style={{
-        ['--chat-panel-width' as string]: chatCollapsed ? '72px' : `${chatPanelWidth}px`,
-        ['--side-panel-width' as string]: sidePanelCollapsed ? '56px' : `${sidePanelWidth}px`,
-      }}
-    >
-      <header className="workspace-toolbar">
-        <div className="toolbar-brand">
-          <div className="brand-mark">
-            <Waypoints size={18} strokeWidth={2.1} />
-          </div>
-          <div>
-            <div className="brand-title">6G Core Skill Workbench</div>
-          </div>
+    <AppShell
+      header={header}
+      chatPanel={<AgentChatbox collapsed={chatCollapsed} onToggleCollapse={toggleChat} />}
+      mainContent={
+        <div className="workspace-surface">
+          <GraphEditor />
         </div>
-
-        <div className="toolbar-actions">
-          <Button size="sm" variant="secondary">
-            <Save size={14} />
-            Save
-          </Button>
-          <Button size="sm" variant="ghost" disabled>
-            <Undo2 size={14} />
-            Undo
-          </Button>
-          <Button size="sm" variant="ghost" disabled>
-            <Redo2 size={14} />
-            Redo
-          </Button>
-          <Button size="sm" variant="secondary">
-            <Search size={14} />
-            Search
-          </Button>
-          <Button size="sm" variant="secondary" onClick={autoLayout}>
-            <LayoutGrid size={14} />
-            Auto Layout
-          </Button>
-          <Button size="sm" variant="secondary" onClick={requestFitView}>
-            <Maximize2 size={14} />
-            Zoom To Fit
-          </Button>
-          <Button size="sm" variant="secondary" onClick={validateDocument}>
-            <CheckCircle2 size={14} />
-            Validate
-          </Button>
-          <Button size="sm" variant="ghost">
-            <Settings2 size={14} />
-            Settings
-          </Button>
-        </div>
-
-        <div className="toolbar-status">
-          <StatusPill status={appState} />
-        </div>
-      </header>
-
-      <main className="workspace-main">
-        <aside className={`workspace-chat-panel ${chatCollapsed ? 'is-collapsed' : ''}`}>
-          <AgentChatbox collapsed={chatCollapsed} onToggleCollapse={toggleChat} />
-        </aside>
-        <div
-          className={`workspace-chat-resizer ${chatCollapsed ? 'is-disabled' : ''}`}
-          onMouseDown={handleChatResizeStart}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize skill generator"
-        />
-
-        <section className="workspace-center">
-          <div className="workspace-surface">
-            <GraphEditor />
-          </div>
-        </section>
-
-        <div
-          className={`workspace-side-resizer ${sidePanelCollapsed ? 'is-disabled' : ''}`}
-          onMouseDown={handleSideResizeStart}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize side panel"
-        />
-
-        <aside className="workspace-side-panel-rail">
-          <div className={`workspace-side-panel workspace-panel-shell ${sidePanelCollapsed ? 'is-collapsed' : ''}`}>
-            {sidePanelCollapsed ? (
-              <button
-                type="button"
-                className="workspace-side-collapsed-rail"
-                onClick={toggleSidePanel}
-                aria-label="Expand skill editor"
-                title="Expand skill editor"
-              >
-                <Wrench size={18} />
-                <span>Skill Editor</span>
-                <PanelRightOpen size={16} />
-              </button>
-            ) : (
-              <>
-                <div className="workspace-panel-header workspace-panel-switches">
-                <div className="workspace-side-panel-tabs">
-                  <button type="button" className={sidePanelTab === 'inspector' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('inspector')}>
-                    <SquarePen size={14} />
-                    Inspector
-                  </button>
-                  <button type="button" className={sidePanelTab === 'log' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('log')}>
-                    <SlidersHorizontal size={14} />
-                    Log
-                  </button>
-                  <button type="button" className={sidePanelTab === 'validation' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('validation')}>
-                    <CheckCircle2 size={14} />
-                    Validation
-                  </button>
-                  <button type="button" className={sidePanelTab === 'markdown' ? 'is-active' : ''} onClick={() => handleSidePanelTabChange('markdown')}>
-                    <Wrench size={14} />
-                    Markdown
-                  </button>
-                </div>
-                  <button type="button" className="workspace-panel-toggle" onClick={toggleSidePanel} aria-label="Collapse side panel">
-                    <PanelRightClose size={15} />
-                  </button>
-                </div>
-                <div className="workspace-side-panel-body">
-                  {sidePanelTab === 'inspector' && <InspectorPanel />}
-                  {sidePanelTab === 'log' && <UtilityPanel activeTab="log" showTabs={false} />}
-                  {sidePanelTab === 'validation' && <UtilityPanel activeTab="validation" showTabs={false} />}
-                  {sidePanelTab === 'markdown' && <UtilityPanel activeTab="markdown" showTabs={false} />}
-                </div>
-              </>
-            )}
-          </div>
-        </aside>
-      </main>
-    </div>
+      }
+      sidePanel={sidePanel}
+    />
   );
 };
 
