@@ -1,22 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import Button from '../../components/Button';
 import { useStore } from '../../store/useStore';
 import type { CardType, SkillNode } from '../../schemas/skill';
+import { isStartNode } from '../../lib/graph';
 import './InspectorPanel.css';
 
-const cardOptions: CardType[] = [
-  'action',
-  'branch',
-  'loop',
-  'parallel',
-  'success',
-  'failure',
-  'constant',
-  'user_container',
-  'device_container',
-  'network_container',
-  'app_container',
-];
+const controlOptions: CardType[] = ['branch', 'loop', 'parallel', 'success', 'failure'];
 
 interface SectionProps {
   title: string;
@@ -34,44 +23,6 @@ const Section: React.FC<SectionProps> = ({ title, subtitle, children }) => (
   </section>
 );
 
-const renderPortSummary = (node: SkillNode) => {
-  if (node.cardType === 'success' || node.cardType === 'failure') {
-    return (
-      <>
-        <div className="inspector-stat">
-          <span>Terminal</span>
-          <strong>Yes</strong>
-        </div>
-        <div className="inspector-stat">
-          <span>Inputs</span>
-          <strong>0</strong>
-        </div>
-        <div className="inspector-stat">
-          <span>Outputs</span>
-          <strong>0</strong>
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <div className="inspector-stat">
-        <span>Inputs</span>
-        <strong>{node.inputs.length}</strong>
-      </div>
-      <div className="inspector-stat">
-        <span>Outputs</span>
-        <strong>{node.outputs.length}</strong>
-      </div>
-      <div className="inspector-stat">
-        <span>Flow</span>
-        <strong>{node.nextActions.length}</strong>
-      </div>
-    </>
-  );
-};
-
 const InspectorPanel: React.FC = () => {
   const {
     document,
@@ -82,21 +33,52 @@ const InspectorPanel: React.FC = () => {
     updateDocument,
     removeNode,
     removeEdge,
+    toolCatalog,
+    loadToolCatalog,
   } = useStore();
+
+  useEffect(() => {
+    if (toolCatalog.length === 0) {
+      void loadToolCatalog();
+    }
+  }, [toolCatalog.length, loadToolCatalog]);
 
   const selectedNode = document?.nodes.find((node) => node.id === selectedNodeId);
   const selectedEdge = document?.edges.find((edge) => edge.id === selectedEdgeId);
+
+  const applyToolToNode = (node: SkillNode, toolName: string) => {
+    const tool = toolCatalog.find((entry) => entry.name === toolName);
+    if (!tool) {
+      return;
+    }
+    updateNode(node.id, {
+      title: tool.name,
+      summary: tool.description,
+      properties: {
+        ...node.properties,
+        tool_name: tool.name,
+        parameter_names: tool.parameters.map((parameter) => parameter.name),
+      },
+    });
+  };
 
   if (!document) {
     return null;
   }
 
   if (selectedNode) {
+    const isActionNode = selectedNode.cardType === 'action';
+    const isFixedStartNode = isStartNode(selectedNode);
+    const selectedToolName =
+      typeof selectedNode.properties.tool_name === 'string' && selectedNode.properties.tool_name.trim()
+        ? String(selectedNode.properties.tool_name)
+        : selectedNode.title;
+
     return (
       <div className="inspector-panel">
         <div className="inspector-body">
           <section className="inspector-hero">
-            <div className="inspector-eyebrow">Selected Card</div>
+            <div className="inspector-eyebrow">Selected Step</div>
             <div className="inspector-hero-header">
               <div>
                 <h3>{selectedNode.title}</h3>
@@ -104,23 +86,42 @@ const InspectorPanel: React.FC = () => {
               </div>
               <span className="inspector-badge">{selectedNode.cardType.replace('_', ' ')}</span>
             </div>
-            <div className="inspector-stats">{renderPortSummary(selectedNode)}</div>
+            <div className="inspector-stats">
+              <div className="inspector-stat">
+                <span>Flow Outputs</span>
+                <strong>{selectedNode.flowOutputs.length}</strong>
+              </div>
+              <div className="inspector-stat">
+                <span>Type</span>
+                <strong>{selectedNode.cardType}</strong>
+              </div>
+              <div className="inspector-stat">
+                <span>Mode</span>
+                <strong>{isActionNode ? 'tool step' : 'control step'}</strong>
+              </div>
+            </div>
           </section>
 
-          <Section title="Overview" subtitle="Core card details">
+          <Section title="Overview" subtitle="Workflow step details">
             <div className="inspector-field-grid">
               <label className="inspector-field">
                 <span>Title</span>
-                <input value={selectedNode.title} onChange={(e) => updateNode(selectedNode.id, { title: e.target.value })} />
+                <input
+                  value={selectedNode.title}
+                  disabled={isFixedStartNode}
+                  onChange={(e) => updateNode(selectedNode.id, { title: e.target.value })}
+                />
               </label>
 
               <label className="inspector-field">
-                <span>Card Type</span>
+                <span>Step Type</span>
                 <select
                   value={selectedNode.cardType}
+                  disabled={isFixedStartNode}
                   onChange={(e) => updateNode(selectedNode.id, { cardType: e.target.value as CardType })}
                 >
-                  {cardOptions.map((option) => (
+                  {isFixedStartNode ? <option value="start">start</option> : <option value="action">action</option>}
+                  {controlOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -134,103 +135,84 @@ const InspectorPanel: React.FC = () => {
               <textarea
                 rows={4}
                 value={selectedNode.summary}
+                disabled={isFixedStartNode}
                 onChange={(e) => updateNode(selectedNode.id, { summary: e.target.value })}
               />
             </label>
+            {isFixedStartNode ? <div className="inspector-empty">The start step is fixed and cannot be removed.</div> : null}
           </Section>
 
-          {selectedNode.sbi ? (
-            <Section title="Action Configuration" subtitle="Service call definition">
+          {isActionNode && !isFixedStartNode ? (
+            <Section title="Real Tool" subtitle="Bind this step to a catalog tool">
               <label className="inspector-field">
-                <span>SBI Action</span>
-                <textarea
-                  rows={6}
-                  value={JSON.stringify(selectedNode.sbi, null, 2)}
-                  onChange={(e) => {
-                    try {
-                      updateNode(selectedNode.id, { sbi: JSON.parse(e.target.value) });
-                    } catch {
-                      // Ignore transient parse failures while typing.
-                    }
-                  }}
-                />
+                <span>Tool</span>
+                <select value={selectedToolName} onChange={(e) => applyToolToNode(selectedNode, e.target.value)}>
+                  <option value="">Select a tool</option>
+                  {toolCatalog.map((tool) => (
+                    <option key={tool.name} value={tool.name}>
+                      {tool.name}
+                    </option>
+                  ))}
+                </select>
               </label>
+
+              <div className="inspector-stack">
+                {toolCatalog
+                  .filter((tool) => tool.name === selectedToolName)
+                  .map((tool) => (
+                    <div key={tool.name} className="inspector-list-row">
+                      <div className="inspector-row-meta">
+                        <strong>{tool.name}</strong>
+                        <span>{tool.description}</span>
+                      </div>
+                      <div className="inspector-inline-tags">
+                        {tool.parameters.map((parameter) => (
+                          <span key={`${tool.name}-${parameter.name}`} className="inspector-tag">
+                            {parameter.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
             </Section>
           ) : null}
 
-          <Section title="Properties" subtitle="Card metadata">
-            <label className="inspector-field">
-              <span>Properties (JSON)</span>
-              <textarea
-                rows={8}
-                value={JSON.stringify(selectedNode.properties, null, 2)}
-                onChange={(e) => {
-                  try {
-                    updateNode(selectedNode.id, { properties: JSON.parse(e.target.value) });
-                  } catch {
-                    // Ignore transient parse failures while typing.
-                  }
-                }}
-              />
-            </label>
+          <Section title="Workflow Outputs" subtitle="Outgoing labels for next steps">
+              <div className="inspector-stack">
+              {selectedNode.flowOutputs.length === 0 ? (
+                <div className="inspector-empty">This step has no outgoing flow labels.</div>
+              ) : (
+                selectedNode.flowOutputs.map((output) => (
+                  <div key={output.id} className="inspector-list-row">
+                    <div className="inspector-row-meta">
+                      <strong>{output.label}</strong>
+                      <span>workflow</span>
+                    </div>
+                    <input
+                      value={output.label}
+                      disabled={isFixedStartNode}
+                      onChange={(e) =>
+                        updateNode(selectedNode.id, {
+                          flowOutputs: selectedNode.flowOutputs.map((item) =>
+                            item.id === output.id ? { ...item, label: e.target.value || item.label } : item,
+                          ),
+                        })
+                      }
+                    />
+                  </div>
+                ))
+              )}
+            </div>
           </Section>
 
-          {selectedNode.inputs.length > 0 ? (
-            <Section title="Inputs" subtitle="Default values and parameter names">
-              <div className="inspector-stack">
-                {selectedNode.inputs.map((pin) => (
-                  <div key={pin.id} className="inspector-list-row">
-                    <div className="inspector-row-meta">
-                      <strong>{pin.name}</strong>
-                      <span>{pin.dataType}</span>
-                    </div>
-                    <input
-                      value={pin.defaultValue === undefined || pin.defaultValue === null ? '' : String(pin.defaultValue)}
-                      onChange={(e) =>
-                        updateNode(selectedNode.id, {
-                          inputs: selectedNode.inputs.map((item) =>
-                            item.id === pin.id ? { ...item, defaultValue: e.target.value || undefined } : item,
-                          ),
-                        })
-                      }
-                      placeholder={pin.required ? 'Required' : 'Optional'}
-                    />
-                  </div>
-                ))}
-              </div>
-            </Section>
+          {!isFixedStartNode ? (
+            <div className="inspector-footer">
+              <Button size="sm" variant="danger" onClick={() => removeNode(selectedNode.id)}>
+                Delete Step
+              </Button>
+            </div>
           ) : null}
-
-          {selectedNode.nextActions.length > 0 ? (
-            <Section title="Action Flow" subtitle="Outgoing flow labels">
-              <div className="inspector-stack">
-                {selectedNode.nextActions.map((port) => (
-                  <div key={port.id} className="inspector-list-row">
-                    <div className="inspector-row-meta">
-                      <strong>{port.label}</strong>
-                      <span>{port.mode}</span>
-                    </div>
-                    <input
-                      value={port.label}
-                      onChange={(e) =>
-                        updateNode(selectedNode.id, {
-                          nextActions: selectedNode.nextActions.map((item) =>
-                            item.id === port.id ? { ...item, label: e.target.value || item.label } : item,
-                          ),
-                        })
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-            </Section>
-          ) : null}
-
-          <div className="inspector-footer">
-            <Button size="sm" variant="danger" onClick={() => removeNode(selectedNode.id)}>
-              Delete Card
-            </Button>
-          </div>
         </div>
       </div>
     );
@@ -241,60 +223,27 @@ const InspectorPanel: React.FC = () => {
       <div className="inspector-panel">
         <div className="inspector-body">
           <section className="inspector-hero">
-            <div className="inspector-eyebrow">Selected Link</div>
+            <div className="inspector-eyebrow">Selected Flow Link</div>
             <div className="inspector-hero-header">
               <div>
-                <h3>{selectedEdge.edgeType === 'data' ? 'Data Link' : 'Action Flow Link'}</h3>
+                <h3>Workflow Link</h3>
                 <p>
                   {selectedEdge.fromNodeId} → {selectedEdge.toNodeId}
                 </p>
               </div>
-              <span className="inspector-badge">{selectedEdge.edgeType}</span>
-            </div>
-            <div className="inspector-stats">
-              <div className="inspector-stat">
-                <span>Source Port</span>
-                <strong>{selectedEdge.fromPortId}</strong>
-              </div>
-              <div className="inspector-stat">
-                <span>Target Port</span>
-                <strong>{selectedEdge.toPortId}</strong>
-              </div>
+              <span className="inspector-badge">{selectedEdge.kind}</span>
             </div>
           </section>
 
-          <Section title="Link Settings" subtitle="Editable connection fields">
+          <Section title="Link Settings" subtitle="Workflow flow metadata">
             <label className="inspector-field">
               <span>Label</span>
-              <input
-                value={selectedEdge.label ?? ''}
-                onChange={(e) => updateEdge(selectedEdge.id, { label: e.target.value || undefined })}
-              />
+              <input value={selectedEdge.label ?? ''} onChange={(e) => updateEdge(selectedEdge.id, { label: e.target.value || undefined })} />
             </label>
 
             <label className="inspector-field">
-              <span>Link Type</span>
-              <input value={selectedEdge.edgeType} disabled />
-            </label>
-          </Section>
-
-          <Section title="Endpoints" subtitle="Resolved connection mapping">
-            <label className="inspector-field">
-              <span>Endpoints</span>
-              <textarea
-                rows={5}
-                disabled
-                value={JSON.stringify(
-                  {
-                    fromNodeId: selectedEdge.fromNodeId,
-                    fromPortId: selectedEdge.fromPortId,
-                    toNodeId: selectedEdge.toNodeId,
-                    toPortId: selectedEdge.toPortId,
-                  },
-                  null,
-                  2,
-                )}
-              />
+              <span>Type</span>
+              <input value={selectedEdge.kind} disabled />
             </label>
           </Section>
 
@@ -312,31 +261,31 @@ const InspectorPanel: React.FC = () => {
     <div className="inspector-panel">
       <div className="inspector-body">
         <section className="inspector-hero">
-          <div className="inspector-eyebrow">Graph Details</div>
+          <div className="inspector-eyebrow">Workflow Details</div>
           <div className="inspector-hero-header">
             <div>
               <h3>{document.name}</h3>
               <p>{document.metadata.description}</p>
             </div>
-            <span className="inspector-badge">live</span>
+            <span className="inspector-badge">workflow</span>
           </div>
           <div className="inspector-stats">
             <div className="inspector-stat">
-              <span>Cards</span>
+              <span>Steps</span>
               <strong>{document.nodes.length}</strong>
             </div>
             <div className="inspector-stat">
-              <span>Links</span>
+              <span>Flow Links</span>
               <strong>{document.edges.length}</strong>
             </div>
             <div className="inspector-stat">
               <span>Mode</span>
-              <strong>{document.metadata.executionMode}</strong>
+              <strong>workflow</strong>
             </div>
           </div>
         </section>
 
-        <Section title="Workspace" subtitle="Skill metadata">
+        <Section title="Workspace" subtitle="Workflow metadata">
           <label className="inspector-field">
             <span>Name</span>
             <input value={document.name} onChange={(e) => updateDocument({ name: e.target.value })} />
@@ -352,24 +301,6 @@ const InspectorPanel: React.FC = () => {
                   metadata: {
                     ...document.metadata,
                     description: e.target.value,
-                  },
-                })
-              }
-            />
-          </label>
-
-          <label className="inspector-field">
-            <span>Tags</span>
-            <input
-              value={document.metadata.tags.join(', ')}
-              onChange={(e) =>
-                updateDocument({
-                  metadata: {
-                    ...document.metadata,
-                    tags: e.target.value
-                      .split(',')
-                      .map((item) => item.trim())
-                      .filter(Boolean),
                   },
                 })
               }

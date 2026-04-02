@@ -91,6 +91,13 @@
   margin-bottom: 0.65rem;
 }
 
+.chat-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
 .model-menu-trigger {
   display: inline-flex;
   align-items: center;
@@ -137,6 +144,54 @@
   flex-direction: column;
   gap: 0.2rem;
   z-index: 20;
+}
+
+.reasoning-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--border-base);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 0.38rem 0.65rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reasoning-toggle.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reasoning-toggle-track {
+  width: 1.7rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: #cbd5e1;
+  position: relative;
+  transition: background-color 0.2s ease;
+}
+
+.reasoning-toggle.is-on .reasoning-toggle-track {
+  background: #2563eb;
+}
+
+.reasoning-toggle-thumb {
+  width: 0.78rem;
+  height: 0.78rem;
+  border-radius: 999px;
+  background: #ffffff;
+  position: absolute;
+  top: 0.11rem;
+  left: 0.11rem;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+}
+
+.reasoning-toggle.is-on .reasoning-toggle-thumb {
+  transform: translateX(0.7rem);
 }
 
 .model-menu-item {
@@ -210,6 +265,19 @@
   word-break: break-word;
 }
 
+.message-markdown-frontmatter {
+  margin: 0 0 0.85rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 12px;
+  background: #f8fafc;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 0.75rem/1.55 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  overflow-x: auto;
+}
+
 .message-status-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -223,6 +291,13 @@
   box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
 }
 
+.message-status-row.is-complete {
+  border-color: rgba(167, 243, 208, 0.95);
+  background: linear-gradient(90deg, rgba(236, 253, 245, 0.98), rgba(248, 250, 252, 0.96));
+  color: #166534;
+  box-shadow: 0 10px 24px rgba(22, 163, 74, 0.08);
+}
+
 .message-status-beacon {
   width: 0.55rem;
   height: 0.55rem;
@@ -230,6 +305,18 @@
   background: #2563eb;
   box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.34);
   animation: status-pulse 1.4s ease-in-out infinite;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+
+.message-status-row.is-complete .message-status-beacon {
+  width: 0.85rem;
+  height: 0.85rem;
+  background: #16a34a;
+  box-shadow: none;
+  animation: none;
 }
 
 .message-status-text {
@@ -311,7 +398,14 @@
 .message-bubble-wrapper {
   display: flex;
   gap: 0.75rem;
-  max-width: 90%;
+  width: fit-content;
+  max-width: calc(100% - 2.5rem);
+  min-width: 0;
+  align-self: flex-start;
+}
+
+.message-bubble-wrapper.is-streaming {
+  width: min(calc(100% - 2.5rem), calc(56ch + 2.75rem));
 }
 
 .message-bubble-wrapper.user {
@@ -346,10 +440,18 @@
   background-color: #f9fafb;
   border: 1px solid var(--border-light);
   color: var(--text-primary);
+  width: auto;
+  max-width: min(100%, 56ch);
+  min-width: 0;
+}
+
+.message-bubble.is-streaming {
+  width: 100%;
 }
 
 .message-content {
   overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .message-content > *:first-child {
@@ -389,6 +491,11 @@
   overflow-x: auto;
 }
 
+.message-thinking-panel .message-markdown-frontmatter {
+  background: #ffffff;
+  border-color: rgba(226, 232, 240, 0.95);
+}
+
 .message-content pre code {
   background: transparent;
   padding: 0;
@@ -404,6 +511,132 @@
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.message-thinking {
+  margin-bottom: 0.65rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.message-thinking-toggle {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #475569;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.28rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.message-thinking-toggle-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.message-thinking-toggle-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+}
+
+.message-thinking-preview {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding-left: 1rem;
+}
+
+.message-thinking-live-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #2563eb;
+  box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.3);
+  animation: status-pulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.message-thinking-panel {
+  margin-top: 0.55rem;
+  padding: 0.75rem 0.8rem;
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.92);
+  color: #334155;
+  font-size: 0.8rem;
+}
+
+.message-thinking-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+  padding-left: 1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.message-thinking-status-ring {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  border: 2px solid rgba(37, 99, 235, 0.18);
+  border-top-color: #2563eb;
+  animation: spin 0.9s linear infinite;
+  flex: 0 0 auto;
+}
+
+.message-thinking-panel > *:first-child {
+  margin-top: 0;
+}
+
+.message-thinking-panel > *:last-child {
+  margin-bottom: 0;
+}
+
+.message-thinking-panel p,
+.message-thinking-panel ul,
+.message-thinking-panel ol,
+.message-thinking-panel pre,
+.message-thinking-panel blockquote {
+  margin: 0.4rem 0;
+}
+
+.message-thinking-panel code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.8em;
+  background: rgba(148, 163, 184, 0.14);
+  padding: 0.12rem 0.3rem;
+  border-radius: 6px;
+}
+
+.message-thinking-panel pre {
+  background: rgba(15, 23, 42, 0.05);
+  border: 1px solid rgba(203, 213, 225, 0.85);
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  overflow-x: auto;
+}
+
+.message-thinking-panel pre code {
+  background: transparent;
+  padding: 0;
 }
 
 .user .message-bubble {

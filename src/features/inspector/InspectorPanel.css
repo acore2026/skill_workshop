@@ -209,6 +209,35 @@
   color: var(--text-tertiary);
 }
 
+.inspector-inline-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.inspector-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.26rem 0.5rem;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.inspector-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 84px;
+  border: 1px dashed var(--border-base);
+  border-radius: 12px;
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+}
+
 .inspector-footer {
   display: flex;
   justify-content: flex-start;

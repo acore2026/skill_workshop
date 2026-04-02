@@ -1,7 +1,6 @@
-import React from 'react';
-import { Boxes, FileStack, Plus } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Boxes, FileStack, Search } from 'lucide-react';
 import Button from '../../components/Button';
-import { CARD_LIBRARY } from '../../lib/graph';
 import { useStore } from '../../store/useStore';
 import type { SkillNode } from '../../schemas/skill';
 import './EditorSidebar.css';
@@ -22,10 +21,31 @@ const EditorSidebar: React.FC = () => {
     setSidebarTab,
     selectedNodeId,
     selectNode,
-    addCardOfType,
+    toolCatalog,
+    loadToolCatalog,
+    addToolStep,
   } = useStore();
+  const [query, setQuery] = useState('');
 
-  if (!document) {
+  useEffect(() => {
+    if (toolCatalog.length === 0) {
+      void loadToolCatalog();
+    }
+  }, [toolCatalog.length, loadToolCatalog]);
+
+  const filteredTools = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return toolCatalog;
+    }
+    return toolCatalog.filter((tool) =>
+      tool.name.toLowerCase().includes(normalizedQuery) ||
+      tool.description.toLowerCase().includes(normalizedQuery) ||
+      tool.parameters.some((parameter) => parameter.name.toLowerCase().includes(normalizedQuery)),
+    );
+  }, [query, toolCatalog]);
+
+  if (!document && sidebarTab !== 'library') {
     return null;
   }
 
@@ -38,11 +58,11 @@ const EditorSidebar: React.FC = () => {
         </button>
         <button type="button" className={sidebarTab === 'library' ? 'is-active' : ''} onClick={() => setSidebarTab('library')}>
           <Boxes size={14} />
-          Library
+          Tools
         </button>
       </div>
 
-      {sidebarTab === 'outline' ? (
+      {sidebarTab === 'outline' && document ? (
         <div className="editor-sidebar-body">
           <section className="sidebar-section">
             <div className="sidebar-section-label">Graph</div>
@@ -50,7 +70,7 @@ const EditorSidebar: React.FC = () => {
               <div className="graph-summary-title">{document.name}</div>
               <div className="graph-summary-meta">{document.metadata.executionMode}</div>
               <div className="graph-summary-stats">
-                <span>{document.nodes.length} cards</span>
+                <span>{document.nodes.length} steps</span>
                 <span>{document.edges.length} links</span>
                 <span>{document.metadata.tags.length} tags</span>
               </div>
@@ -71,7 +91,7 @@ const EditorSidebar: React.FC = () => {
                       onClick={() => selectNode(node.id)}
                     >
                       <span>{node.title}</span>
-                      <span>{node.inputs.length + node.outputs.length + node.nextActions.length} lanes</span>
+                      <span>{node.flowOutputs.length} exits</span>
                     </button>
                   ))}
                 </div>
@@ -83,20 +103,38 @@ const EditorSidebar: React.FC = () => {
       ) : (
         <div className="editor-sidebar-body library-mode">
           <section className="sidebar-section">
-            <div className="sidebar-section-label">Card Library</div>
+            <div className="sidebar-section-label">Tool Catalog</div>
+            <label className="tool-search-box">
+              <Search size={14} />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tools or parameters" />
+            </label>
             <div className="library-stack">
-              {CARD_LIBRARY.map((template) => (
-                <div key={template.id} className="library-card">
-                  <div className="library-card-title">{template.title}</div>
-                  <p>{template.summary}</p>
+              {filteredTools.map((tool) => (
+                <div key={tool.name} className="library-card">
+                  <div className="library-card-title">{tool.name}</div>
+                  <p>{tool.description}</p>
+                  {tool.parameters.length > 0 ? (
+                    <div className="tool-parameter-list">
+                      {tool.parameters.map((parameter) => (
+                        <div key={`${tool.name}-${parameter.name}`} className="tool-parameter-row">
+                          <div>
+                            <strong>{parameter.name}</strong>
+                            <span>{parameter.type}</span>
+                          </div>
+                          <em>{parameter.required ? 'required' : 'optional'}</em>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="library-card-footer">
-                    <Button type="button" size="sm" variant="secondary" onClick={() => addCardOfType(template.cardType)}>
-                      <Plus size={12} />
-                      Add
+                    <Button type="button" size="sm" variant="secondary" onClick={() => addToolStep(tool.name)}>
+                      Add Step
                     </Button>
+                    <span>{tool.parameters.length} params</span>
                   </div>
                 </div>
               ))}
+              {filteredTools.length === 0 ? <div className="tool-empty-state">No tools matched that search.</div> : null}
             </div>
           </section>
         </div>

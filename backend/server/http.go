@@ -31,6 +31,7 @@ func NewAPIServer(cfg Config, orchestrator AgentOrchestrator) *APIServer {
 func (s *APIServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/tools", s.handleTools)
 	mux.HandleFunc("/ws/agent-run", s.handleAgentRun)
 	return mux
 }
@@ -44,6 +45,22 @@ func (s *APIServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeCORS(w, r, s.cfg.AllowedOrigins)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func (s *APIServer) handleTools(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	writeCORS(w, r, s.cfg.AllowedOrigins)
+	catalog, err := loadNormalizedToolCatalog()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(catalog)
 }
 
 func (s *APIServer) handleAgentRun(w http.ResponseWriter, r *http.Request) {

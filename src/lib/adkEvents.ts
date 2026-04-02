@@ -39,18 +39,25 @@ export const getADKDisplayText = (payload: ADKSessionEventPayload) => {
   if (text) {
     return stripFunctionCallMarkup(text);
   }
+  return '';
+};
+
+export const getADKThoughtText = (payload: ADKSessionEventPayload) => {
   const thought = typeof payload.thought === 'string' ? payload.thought.trim() : '';
-  return thought;
+  if (thought) {
+    return stripFunctionCallMarkup(thought);
+  }
+  return '';
 };
 
 export const getADKStage = (payload: ADKSessionEventPayload) => {
   switch ((payload.author || '').trim()) {
-    case 'analysis_agent':
+    case 'intent_analysis_agent':
       return 'analysis';
-    case 'draft_agent':
-      return 'draft';
-    case 'package_agent':
-      return 'package';
+    case 'skill_writer_agent':
+      return 'writer';
+    case 'markdown_format_checker_agent':
+      return 'checker';
     default:
       return 'run';
   }

@@ -1,17 +1,26 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { CardType, DataPort, NextActionPort, SbiAction, SkillDocument, SkillEdge, SkillNode } from '../schemas/skill.ts';
+import type { CardType, SkillDocument, SkillEdge, SkillNode, WorkflowNodeType, WorkflowOutput } from '../schemas/skill.ts';
+
+export interface ToolCatalogTool {
+  name: string;
+  description: string;
+  parameters: Array<{
+    name: string;
+    type: string;
+    required: boolean;
+    description?: string;
+  }>;
+}
 
 export interface CardTemplate {
   id: string;
+  nodeType: WorkflowNodeType;
   cardType: CardType;
   title: string;
   summary: string;
   badge: string;
   tint: string;
-  inputs: Array<Omit<DataPort, 'id' | 'nodeId'>>;
-  outputs: Array<Omit<DataPort, 'id' | 'nodeId'>>;
-  nextActions: Array<Omit<NextActionPort, 'id' | 'nodeId'>>;
-  sbi?: SbiAction;
+  flowOutputs: Array<{ label: string }>;
   properties: Record<string, unknown>;
 }
 
@@ -27,429 +36,261 @@ export interface CaseTemplate {
     title?: string;
     summary?: string;
     properties?: Record<string, unknown>;
-    inputs?: Array<Omit<DataPort, 'id' | 'nodeId'>>;
-    outputs?: Array<Omit<DataPort, 'id' | 'nodeId'>>;
-    nextActions?: Array<Omit<NextActionPort, 'id' | 'nodeId'>>;
-    sbi?: SbiAction;
+    flowOutputs?: CardTemplate['flowOutputs'];
     position: { x: number; y: number };
   }>;
-  edges: Array<
-    | {
-        type: 'data';
-        from: { card: string; port: string };
-        to: { card: string; port: string };
-        label?: string;
-      }
-    | {
-        type: 'next_action';
-        from: { card: string; port: string };
-        to: { card: string; port: string };
-        label?: string;
-      }
-  >;
+  edges: Array<{
+    from: { card: string; output: string };
+    to: { card: string };
+    label?: string;
+  }>;
 }
 
-type DataPortDirection = 'input' | 'output';
-
-const createDataPort = (
-  nodeId: string,
-  direction: DataPortDirection,
-  name: string,
-  dataType: string,
-  required = false,
-  defaultValue?: string | number | boolean | null,
-): DataPort => ({
-  id: `${nodeId}-${direction}-${name.toLowerCase().replace(/\s+/g, '-')}`,
-  nodeId,
-  direction,
-  name,
-  dataType,
-  required,
-  defaultValue,
-});
-
-const createNextActionPort = (
-  nodeId: string,
-  label: string,
-  mode: 'inout' | 'target' = 'inout',
-): NextActionPort => ({
-  id: `${nodeId}-next-${label.toLowerCase().replace(/\s+/g, '-')}`,
+const createFlowOutput = (nodeId: string, label: string): WorkflowOutput => ({
+  id: `${nodeId}-flow-${label.toLowerCase().replace(/\s+/g, '-')}`,
   nodeId,
   label,
-  mode,
 });
+
+export const isStartNode = (node: Pick<SkillNode, 'cardType'>) => node.cardType === 'start';
+
+export const getStartNode = (document: SkillDocument) => document.nodes.find((node) => isStartNode(node)) ?? null;
 
 export const CARD_LIBRARY: CardTemplate[] = [
   {
+    id: 'start',
+    nodeType: 'control',
+    cardType: 'start',
+    title: 'Start',
+    summary: 'Fixed entry point for the workflow.',
+    badge: 'Start',
+    tint: '#d1fae5',
+    flowOutputs: [{ label: 'begin' }],
+    properties: { fixed: true },
+  },
+  {
     id: 'action',
+    nodeType: 'tool_step',
     cardType: 'action',
-    title: 'Nacrf Skill Discovery',
-    summary: 'Executes an SBI interface call against the capability repository.',
-    badge: 'Action',
+    title: 'Workflow Step',
+    summary: 'Invoke a real tool step inside the workflow.',
+    badge: 'Tool',
     tint: '#dbeafe',
-    inputs: [
-      { direction: 'input', name: 'intent', dataType: 'text', required: true },
-      { direction: 'input', name: 'domain', dataType: 'string', required: false, defaultValue: 'network' },
-      { direction: 'input', name: 'constraints', dataType: 'json', required: false },
-    ],
-    outputs: [
-      { direction: 'output', name: 'intent', dataType: 'text', required: false },
-      { direction: 'output', name: 'options', dataType: 'json', required: false },
-      { direction: 'output', name: 'skill_uri', dataType: 'skill', required: false },
-      { direction: 'output', name: 'match_score', dataType: 'number', required: false },
-      { direction: 'output', name: 'service_directive', dataType: 'directive', required: false },
-    ],
-    nextActions: [{ label: 'next', mode: 'inout' }],
-    sbi: {
-      service: 'Nacrf_SkillDiscovery',
-      operation: 'DiscoverSkill',
-      method: 'POST',
-      endpoint: '/skill-discovery/v1/query',
-    },
-    properties: { operation: 'semantic_discovery' },
+    flowOutputs: [{ label: 'next' }],
+    properties: {},
   },
   {
     id: 'branch',
+    nodeType: 'control',
     cardType: 'branch',
-    title: 'Capability Decision',
-    summary: 'Chooses the next route based on confidence or capability match.',
+    title: 'Branch',
+    summary: 'Choose the next route based on a workflow gate.',
     badge: 'Branch',
     tint: '#fef3c7',
-    inputs: [
-      { direction: 'input', name: 'skill', dataType: 'skill', required: true },
-      { direction: 'input', name: 'match_score', dataType: 'number', required: false },
-    ],
-    outputs: [{ direction: 'output', name: 'decision', dataType: 'decision', required: false }],
-    nextActions: [
-      { label: 'match', mode: 'inout' },
-      { label: 'fallback', mode: 'inout' },
-    ],
-    properties: { threshold: 0.8 },
+    flowOutputs: [{ label: 'continue' }, { label: 'abort' }],
+    properties: {},
   },
   {
     id: 'loop',
+    nodeType: 'control',
     cardType: 'loop',
-    title: 'Refinement Loop',
-    summary: 'Repeats negotiation until constraints are satisfied.',
+    title: 'Loop',
+    summary: 'Repeat a section until a workflow condition is satisfied.',
     badge: 'Loop',
     tint: '#e0e7ff',
-    inputs: [
-      { direction: 'input', name: 'options', dataType: 'json', required: false },
-      { direction: 'input', name: 'policy', dataType: 'json', required: false },
-    ],
-    outputs: [
-      { direction: 'output', name: 'refined', dataType: 'json', required: false },
-      { direction: 'output', name: 'skill_uri', dataType: 'skill', required: false },
-    ],
-    nextActions: [
-      { label: 'repeat', mode: 'inout' },
-      { label: 'done', mode: 'inout' },
-    ],
-    properties: { maxIterations: 3 },
+    flowOutputs: [{ label: 'repeat' }, { label: 'done' }],
+    properties: {},
   },
   {
     id: 'parallel',
+    nodeType: 'control',
     cardType: 'parallel',
-    title: 'Domain Fan-Out',
-    summary: 'Runs discovery across UE, NF, and AF domains.',
+    title: 'Parallel',
+    summary: 'Fan out work across multiple lanes before joining.',
     badge: 'Parallel',
     tint: '#dcfce7',
-    inputs: [
-      { direction: 'input', name: 'capability', dataType: 'capability', required: true },
-      { direction: 'input', name: 'slice', dataType: 'string', required: false },
-    ],
-    outputs: [
-      { direction: 'output', name: 'ue_match', dataType: 'json', required: false },
-      { direction: 'output', name: 'nf_match', dataType: 'json', required: false },
-      { direction: 'output', name: 'af_match', dataType: 'json', required: false },
-      { direction: 'output', name: 'matches', dataType: 'json', required: false },
-    ],
-    nextActions: [
-      { label: 'ue lane', mode: 'inout' },
-      { label: 'nf lane', mode: 'inout' },
-      { label: 'af lane', mode: 'inout' },
-      { label: 'join', mode: 'inout' },
-    ],
-    properties: { mode: 'best-effort' },
+    flowOutputs: [{ label: 'lane-a' }, { label: 'lane-b' }, { label: 'join' }],
+    properties: {},
   },
   {
     id: 'success',
+    nodeType: 'control',
     cardType: 'success',
-    title: 'Success',
-    summary: 'Terminal success state for the current skill path.',
-    badge: 'Success',
+    title: 'Done',
+    summary: 'Terminal success state for the workflow.',
+    badge: 'Done',
     tint: '#dcfce7',
-    inputs: [],
-    outputs: [],
-    nextActions: [{ label: 'complete', mode: 'target' }],
+    flowOutputs: [],
     properties: { outcome: 'success' },
   },
   {
     id: 'failure',
+    nodeType: 'control',
     cardType: 'failure',
-    title: 'Failure',
-    summary: 'Terminal failure state for the current skill path.',
-    badge: 'Failure',
+    title: 'Abort',
+    summary: 'Terminal failure state for the workflow.',
+    badge: 'Abort',
     tint: '#fee2e2',
-    inputs: [],
-    outputs: [],
-    nextActions: [{ label: 'halt', mode: 'target' }],
+    flowOutputs: [],
     properties: { outcome: 'failure' },
-  },
-  {
-    id: 'constant',
-    cardType: 'constant',
-    title: 'Constant',
-    summary: 'Provide an inline literal value for downstream skill inputs.',
-    badge: 'Constant',
-    tint: '#fae8ff',
-    inputs: [],
-    outputs: [{ direction: 'output', name: 'attribute_1', dataType: 'string', required: false, defaultValue: 'sample' }],
-    nextActions: [],
-    properties: { attribute_1: 'sample' },
-  },
-  {
-    id: 'user_container',
-    cardType: 'user_container',
-    title: 'User Container',
-    summary: 'Expose subscriber and session identity values as a single data object.',
-    badge: 'User',
-    tint: '#e0f2fe',
-    inputs: [],
-    outputs: [
-      { direction: 'output', name: 'SUPI', dataType: 'string', required: false },
-      { direction: 'output', name: 'PDU Session ID', dataType: 'number', required: false },
-      { direction: 'output', name: 'DNN', dataType: 'string', required: false },
-      { direction: 'output', name: 'S-NSSAI', dataType: 'string', required: false },
-      { direction: 'output', name: 'GPSI', dataType: 'string', required: false },
-    ],
-    nextActions: [],
-    properties: {
-      SUPI: 'imsi-001010123456789',
-      'PDU Session ID': 10,
-      DNN: 'internet',
-      'S-NSSAI': '1-010203',
-      GPSI: 'msisdn-8613712345678',
-    },
-  },
-  {
-    id: 'device_container',
-    cardType: 'device_container',
-    title: 'Device Container',
-    summary: 'Expose UE mobility, compute, and capability context as a single value.',
-    badge: 'Device',
-    tint: '#ede9fe',
-    inputs: [],
-    outputs: [
-      { direction: 'output', name: 'Mobility State', dataType: 'string', required: false },
-      { direction: 'output', name: 'Compute Resource Type', dataType: 'string', required: false },
-      { direction: 'output', name: 'UE Service Capabilities', dataType: 'string', required: false },
-      { direction: 'output', name: '3GPP Service Role', dataType: 'string', required: false },
-    ],
-    nextActions: [],
-    properties: {
-      'Mobility State': 'stationary',
-      'Compute Resource Type': 'edge-assisted',
-      'UE Service Capabilities': 'voice,data,sensing',
-      '3GPP Service Role': 'consumer',
-    },
-  },
-  {
-    id: 'network_container',
-    cardType: 'network_container',
-    title: 'Network Container',
-    summary: 'Expose service-area and network capability context as a single value.',
-    badge: 'Network',
-    tint: '#dcfce7',
-    inputs: [],
-    outputs: [
-      { direction: 'output', name: 'Service Area', dataType: 'string', required: false },
-      { direction: 'output', name: 'NF Load Status', dataType: 'string', required: false },
-      { direction: 'output', name: 'Supported Protocols', dataType: 'string', required: false },
-    ],
-    nextActions: [],
-    properties: {
-      'Service Area': 'shanghai-core',
-      'NF Load Status': 'nominal',
-      'Supported Protocols': 'HTTP2,QUIC',
-    },
-  },
-  {
-    id: 'app_container',
-    cardType: 'app_container',
-    title: 'App Container',
-    summary: 'Expose application intent constraints as a single value.',
-    badge: 'App',
-    tint: '#ffe4e6',
-    inputs: [],
-    outputs: [
-      { direction: 'output', name: 'App Service Category', dataType: 'string', required: false },
-      { direction: 'output', name: 'Min Bandwidth Req', dataType: 'string', required: false },
-    ],
-    nextActions: [],
-    properties: {
-      'App Service Category': 'immersive-media',
-      'Min Bandwidth Req': '25Mbps',
-    },
   },
 ];
 
 export const CASE_LIBRARY: CaseTemplate[] = [
   {
-    id: 'three-stage-pipeline',
-    title: 'Gaming Turbo Mode',
-    summary: 'Create QoS, charging, and policy updates for a gaming turbo-mode request.',
-    excerpt:
-      'Enable Turbo Mode for Gaming drives a compact AF, charging, and policy authorization flow for a latency-sensitive session.',
-    tags: ['gaming', 'qos', 'policy'],
+    id: 'acn-agent-access',
+    title: 'ACN',
+    summary: 'Process of connecting embodied agents to the network.',
+    excerpt: 'Direct the workflow of a tool chain to connect a new embodied agent into a core network subnet.',
+    tags: ['acn', 'subnet', 'access'],
     cards: [
       {
-        key: 'afsession',
+        key: 'subscription',
         templateId: 'action',
-        title: 'AFSessionWithQosCreate',
-        summary: 'Create an application session with required QoS for gaming traffic.',
+        title: 'Subscription_tool',
+        summary: 'Validate whether the user or agent has subscribed to the required network capability.',
         properties: {
-          afAppId: 'cloud-gaming',
-          dnn: 'internet',
-          snssai: '1-010203',
-          qosReference: 'GBR',
-          notificationUri: 'https://af.example.com/callbacks/qos',
-        },
-        inputs: [
-          { direction: 'input', name: 'afAppId', dataType: 'string', required: true, defaultValue: 'cloud-gaming' },
-          { direction: 'input', name: 'dnn', dataType: 'string', required: false, defaultValue: 'internet' },
-          { direction: 'input', name: 'snssai', dataType: 'string', required: false, defaultValue: '1-010203' },
-          { direction: 'input', name: 'qosReference', dataType: 'string', required: false, defaultValue: 'GBR' },
-          { direction: 'input', name: 'notificationUri', dataType: 'string', required: false, defaultValue: 'https://af.example.com/callbacks/qos' },
-        ],
-        outputs: [
-          { direction: 'output', name: 'appSessionId', dataType: 'string', required: false },
-          { direction: 'output', name: 'qosDecision', dataType: 'json', required: false },
-        ],
-        sbi: {
-          service: 'Npcf_PolicyAuthorization',
-          operation: 'AFSessionWithQosCreate',
-          method: 'POST',
-          endpoint: '/npcf-policyauthorization/v1/app-sessions',
+          tool_name: 'Subscription_tool',
+          parameter_names: ['ue_id', 'service_type'],
         },
         position: { x: 160, y: 180 },
       },
       {
-        key: 'chargeable',
-        templateId: 'action',
-        title: 'ChargeablePartyCreate',
-        summary: 'Create a sponsored charging transaction for the boosted gaming flow.',
-        properties: {
-          dnn: 'internet',
-          snssai: '1-010203',
-          sponsorInformation: 'game-pass-premium',
-          sponsoringStatus: 'enabled',
-          notificationDestination: 'https://af.example.com/callbacks/charging',
-        },
-        inputs: [
-          { direction: 'input', name: 'dnn', dataType: 'string', required: false, defaultValue: 'internet' },
-          { direction: 'input', name: 'snssai', dataType: 'string', required: false, defaultValue: '1-010203' },
-          { direction: 'input', name: 'sponsorInformation', dataType: 'string', required: false, defaultValue: 'game-pass-premium' },
-          { direction: 'input', name: 'sponsoringStatus', dataType: 'string', required: false, defaultValue: 'enabled' },
-          { direction: 'input', name: 'notificationDestination', dataType: 'string', required: false, defaultValue: 'https://af.example.com/callbacks/charging' },
-        ],
-        outputs: [
-          { direction: 'output', name: 'transactionId', dataType: 'string', required: false },
-          { direction: 'output', name: 'chargeableParty', dataType: 'json', required: false },
-        ],
-        sbi: {
-          service: 'ChargeableParty',
-          operation: 'ChargeablePartyCreate',
-          method: 'POST',
-          endpoint: '/3gpp-chargeable-party/v1/{scsAsId}/transactions',
-        },
-        position: { x: 500, y: 120 },
+        key: 'subscription_gate',
+        templateId: 'branch',
+        title: 'Subscription OK?',
+        summary: 'Abort the workflow if subscription validation fails.',
+        flowOutputs: [{ label: 'continue' }, { label: 'abort' }],
+        position: { x: 480, y: 180 },
       },
       {
-        key: 'policy',
+        key: 'subnet_context',
         templateId: 'action',
-        title: 'PolicyAuthorizationUpdate',
-        summary: 'Update the policy authorization session with gaming QoS refinements.',
+        title: 'Create_Or_Update_Subnet_Context_tool',
+        summary: 'Create or update the collaborative subnet context before onboarding the new agent.',
         properties: {
-          qosReference: 'GBR',
-          altSerReqs: 'LOW_LATENCY,HIGH_THROUGHPUT',
-          disUeNotif: true,
-          maxSuppBwDl: '150 Mbps',
-          maxSuppBwUl: '50 Mbps',
+          tool_name: 'Create_Or_Update_Subnet_Context_tool',
+          parameter_names: ['ue_id', 'agent_list', 'subnet_specification'],
         },
-        inputs: [
-          { direction: 'input', name: 'appSessionId', dataType: 'string', required: true },
-          { direction: 'input', name: 'qosReference', dataType: 'string', required: false, defaultValue: 'GBR' },
-          { direction: 'input', name: 'altSerReqs', dataType: 'string', required: false, defaultValue: 'LOW_LATENCY,HIGH_THROUGHPUT' },
-          { direction: 'input', name: 'disUeNotif', dataType: 'boolean', required: false, defaultValue: true },
-          { direction: 'input', name: 'maxSuppBwDl', dataType: 'string', required: false, defaultValue: '150 Mbps' },
-        ],
-        outputs: [
-          { direction: 'output', name: 'policyPatchResult', dataType: 'json', required: false },
-          { direction: 'output', name: 'serviceDirective', dataType: 'directive', required: false },
-        ],
-        sbi: {
-          service: 'Npcf_PolicyAuthorization',
-          operation: 'PolicyAuthorizationUpdate',
-          method: 'PATCH',
-          endpoint: '/npcf-policyauthorization/v1/app-sessions/{appSessionId}',
-        },
-        position: { x: 500, y: 300 },
+        position: { x: 840, y: 100 },
       },
-      { key: 'result', templateId: 'success', title: 'Turbo Mode Enabled', summary: 'Gaming boost policy is active and sponsor charging is attached.', position: { x: 860, y: 210 } },
+      {
+        key: 'context_gate',
+        templateId: 'branch',
+        title: 'Subnet Context Ready?',
+        summary: 'Abort the workflow if subnet context creation fails.',
+        flowOutputs: [{ label: 'continue' }, { label: 'abort' }],
+        position: { x: 1160, y: 100 },
+      },
+      {
+        key: 'issue_token',
+        templateId: 'action',
+        title: 'Issue_Access_Token_tool',
+        summary: 'Generate the access token required for the target agent to enter the subnet.',
+        properties: {
+          tool_name: 'Issue_Access_Token_tool',
+          parameter_names: ['subnet_id', 'agent_id'],
+        },
+        position: { x: 1520, y: 40 },
+      },
+      {
+        key: 'validate_token',
+        templateId: 'action',
+        title: 'Validate_Access_Token_tool',
+        summary: 'Validate that the issued access token is still valid for the subnet.',
+        properties: {
+          tool_name: 'Validate_Access_Token_tool',
+          parameter_names: ['agent_id', 'subnet_id', 'provided_token'],
+        },
+        position: { x: 1880, y: 40 },
+      },
+      {
+        key: 'token_gate',
+        templateId: 'branch',
+        title: 'Token Valid?',
+        summary: 'Abort the workflow if token validation fails.',
+        flowOutputs: [{ label: 'continue' }, { label: 'abort' }],
+        position: { x: 2240, y: 40 },
+      },
+      {
+        key: 'pdu_session',
+        templateId: 'action',
+        title: 'Create_Subnet_PDUSession_tool',
+        summary: 'Establish the subnet PDU session that connects the new agent to the subnet.',
+        properties: {
+          tool_name: 'Create_Subnet_PDUSession_tool',
+          parameter_names: ['agent_id', 'subnet_id'],
+        },
+        position: { x: 2600, y: 40 },
+      },
+      {
+        key: 'done',
+        templateId: 'success',
+        title: 'DONE',
+        summary: 'The embodied agent has been connected to the network subnet successfully.',
+        position: { x: 2960, y: 40 },
+      },
+      {
+        key: 'abort',
+        templateId: 'failure',
+        title: 'ABORT',
+        summary: 'The workflow stops immediately when any required gate fails.',
+        position: { x: 1520, y: 320 },
+      },
     ],
     edges: [
-      { type: 'data', from: { card: 'afsession', port: 'appSessionId' }, to: { card: 'policy', port: 'appSessionId' }, label: 'session id' },
-      { type: 'next_action', from: { card: 'afsession', port: 'next' }, to: { card: 'chargeable', port: 'next' } },
-      { type: 'next_action', from: { card: 'chargeable', port: 'next' }, to: { card: 'policy', port: 'next' } },
-      { type: 'next_action', from: { card: 'policy', port: 'next' }, to: { card: 'result', port: 'complete' } },
+      { from: { card: 'subscription', output: 'next' }, to: { card: 'subscription_gate' } },
+      { from: { card: 'subscription_gate', output: 'continue' }, to: { card: 'subnet_context' } },
+      { from: { card: 'subscription_gate', output: 'abort' }, to: { card: 'abort' }, label: 'abort' },
+      { from: { card: 'subnet_context', output: 'next' }, to: { card: 'context_gate' } },
+      { from: { card: 'context_gate', output: 'continue' }, to: { card: 'issue_token' } },
+      { from: { card: 'context_gate', output: 'abort' }, to: { card: 'abort' }, label: 'abort' },
+      { from: { card: 'issue_token', output: 'next' }, to: { card: 'validate_token' } },
+      { from: { card: 'validate_token', output: 'next' }, to: { card: 'token_gate' } },
+      { from: { card: 'token_gate', output: 'continue' }, to: { card: 'pdu_session' } },
+      { from: { card: 'token_gate', output: 'abort' }, to: { card: 'abort' }, label: 'abort' },
+      { from: { card: 'pdu_session', output: 'next' }, to: { card: 'done' } },
     ],
   },
   {
     id: 'a2ui-negotiation',
     title: 'A2UI Negotiation and Refinement',
-    summary: 'Refine ambiguous intents through A2UI before selecting a skill.',
-    excerpt:
-      'The document positions A2UI as a declarative broker that refines ambiguous intents before they enter the deterministic stages.',
+    summary: 'Refine ambiguous intents through iterative branching before selecting a tool path.',
+    excerpt: 'A2UI acts as a declarative broker that refines ambiguous intents before the workflow continues.',
     tags: ['a2ui', 'negotiation', 'loop'],
     cards: [
-      { key: 'capture', templateId: 'action', title: 'Capture Ambiguous Intent', summary: 'Receive a natural-language objective from the application or user.', position: { x: 120, y: 160 } },
-      { key: 'loop', templateId: 'loop', title: 'A2UI Negotiation', summary: 'Exchange structured skill options until the intent is constrained.', position: { x: 420, y: 130 } },
-      { key: 'select', templateId: 'action', title: 'Select Skill', summary: 'Choose the best skill after refinement.', position: { x: 760, y: 90 } },
-      { key: 'reject', templateId: 'failure', title: 'Negotiation Failed', summary: 'Could not converge on a safe directive.', position: { x: 760, y: 290 } },
-      { key: 'accept', templateId: 'success', title: 'Negotiation Complete', summary: 'Constraints are stable and ready for directive generation.', position: { x: 1070, y: 90 } },
+      { key: 'capture', templateId: 'action', title: 'Capture Intent', summary: 'Receive the high-level request from the user or app.', properties: { tool_name: 'Capture Intent' }, position: { x: 120, y: 170 } },
+      { key: 'loop', templateId: 'loop', title: 'Negotiation Loop', summary: 'Refine the workflow path until the request is constrained.', position: { x: 430, y: 150 } },
+      { key: 'select', templateId: 'action', title: 'Select Workflow Tool', summary: 'Choose the best tool step after refinement.', properties: { tool_name: 'Select Workflow Tool' }, position: { x: 790, y: 90 } },
+      { key: 'reject', templateId: 'failure', title: 'Negotiation Failed', summary: 'The workflow could not converge on a safe route.', position: { x: 790, y: 300 } },
+      { key: 'accept', templateId: 'success', title: 'Negotiation Complete', summary: 'The workflow is stable and ready for execution.', position: { x: 1120, y: 90 } },
     ],
     edges: [
-      { type: 'data', from: { card: 'capture', port: 'options' }, to: { card: 'loop', port: 'options' }, label: 'intent options' },
-      { type: 'data', from: { card: 'loop', port: 'refined' }, to: { card: 'select', port: 'intent' }, label: 'refined intent' },
-      { type: 'next_action', from: { card: 'capture', port: 'next' }, to: { card: 'loop', port: 'repeat' } },
-      { type: 'next_action', from: { card: 'loop', port: 'repeat' }, to: { card: 'loop', port: 'repeat' }, label: 'ask again' },
-      { type: 'next_action', from: { card: 'loop', port: 'done' }, to: { card: 'select', port: 'next' } },
-      { type: 'next_action', from: { card: 'select', port: 'next' }, to: { card: 'accept', port: 'complete' } },
-      { type: 'next_action', from: { card: 'loop', port: 'repeat' }, to: { card: 'reject', port: 'halt' }, label: 'give up' },
+      { from: { card: 'capture', output: 'next' }, to: { card: 'loop' } },
+      { from: { card: 'loop', output: 'repeat' }, to: { card: 'loop' }, label: 'ask again' },
+      { from: { card: 'loop', output: 'done' }, to: { card: 'select' } },
+      { from: { card: 'loop', output: 'repeat' }, to: { card: 'reject' }, label: 'give up' },
+      { from: { card: 'select', output: 'next' }, to: { card: 'accept' } },
     ],
   },
   {
     id: 'multi-domain-discovery',
     title: 'Multi-Domain Semantic Discovery',
-    summary: 'Discover skills across UE, NF, and AF domains with fallback.',
-    excerpt:
-      'The architecture supports heterogeneous UE, NF, and AF entities exposing capabilities through a unified agentic skill profile.',
+    summary: 'Discover skills across multiple domains with a workflow branch for fallback.',
+    excerpt: 'The architecture supports heterogeneous entities exposing capabilities through a unified workflow.',
     tags: ['ue', 'nf', 'af', 'parallel'],
     cards: [
-      { key: 'request', templateId: 'action', title: 'Discovery Request', summary: 'Start capability-based discovery instead of identity-based routing.', position: { x: 110, y: 200 } },
-      { key: 'fanout', templateId: 'parallel', title: 'Search Domains', summary: 'Query UE, NF, and AF domains in parallel.', position: { x: 410, y: 140 } },
-      { key: 'decide', templateId: 'branch', title: 'Capability Match?', summary: 'Branch based on semantic match confidence.', position: { x: 820, y: 200 } },
+      { key: 'request', templateId: 'action', title: 'Discovery Request', summary: 'Start capability-based discovery.', properties: { tool_name: 'Discovery Request' }, position: { x: 110, y: 200 } },
+      { key: 'fanout', templateId: 'parallel', title: 'Search Domains', summary: 'Query domains in parallel.', flowOutputs: [{ label: 'lane-a' }, { label: 'lane-b' }, { label: 'join' }], position: { x: 430, y: 160 } },
+      { key: 'decide', templateId: 'branch', title: 'Capability Match?', summary: 'Branch based on semantic match confidence.', flowOutputs: [{ label: 'match' }, { label: 'fallback' }], position: { x: 820, y: 200 } },
       { key: 'success', templateId: 'success', title: 'Skill Resolved', summary: 'A skill endpoint is available for execution.', position: { x: 1160, y: 130 } },
       { key: 'failure', templateId: 'failure', title: 'Fallback Route', summary: 'No trusted match was found.', position: { x: 1160, y: 300 } },
     ],
     edges: [
-      { type: 'data', from: { card: 'request', port: 'options' }, to: { card: 'fanout', port: 'capability' }, label: 'requested capability' },
-      { type: 'data', from: { card: 'fanout', port: 'matches' }, to: { card: 'decide', port: 'skill' }, label: 'candidate skills' },
-      { type: 'next_action', from: { card: 'request', port: 'next' }, to: { card: 'fanout', port: 'ue lane' } },
-      { type: 'next_action', from: { card: 'fanout', port: 'join' }, to: { card: 'decide', port: 'match' } },
-      { type: 'next_action', from: { card: 'decide', port: 'match' }, to: { card: 'success', port: 'complete' } },
-      { type: 'next_action', from: { card: 'decide', port: 'fallback' }, to: { card: 'failure', port: 'halt' } },
+      { from: { card: 'request', output: 'next' }, to: { card: 'fanout' } },
+      { from: { card: 'fanout', output: 'join' }, to: { card: 'decide' } },
+      { from: { card: 'decide', output: 'match' }, to: { card: 'success' } },
+      { from: { card: 'decide', output: 'fallback' }, to: { card: 'failure' } },
     ],
   },
 ];
@@ -460,10 +301,8 @@ export const getCaseById = (caseId: string) => CASE_LIBRARY.find((item) => item.
 export const createCardFromTemplate = (
   template: CardTemplate,
   position: { x: number; y: number },
-  overrides?: Partial<Pick<SkillNode, 'title' | 'summary' | 'properties' | 'sbi'>> & {
-    inputs?: CardTemplate['inputs'];
-    outputs?: CardTemplate['outputs'];
-    nextActions?: CardTemplate['nextActions'];
+  overrides?: Partial<Pick<SkillNode, 'title' | 'summary' | 'properties'>> & {
+    flowOutputs?: CardTemplate['flowOutputs'];
   },
   sourceCase?: SkillNode['sourceCase'],
 ): SkillNode => {
@@ -471,25 +310,19 @@ export const createCardFromTemplate = (
 
   return {
     id: nodeId,
+    nodeType: template.nodeType,
     cardType: template.cardType,
     title: overrides?.title ?? template.title,
     summary: overrides?.summary ?? template.summary,
     position,
     size: { w: 320, h: 220 },
-    inputs: (overrides?.inputs ?? template.inputs).map((port) =>
-      createDataPort(nodeId, 'input', port.name, port.dataType, port.required, port.defaultValue),
-    ),
-    outputs: (overrides?.outputs ?? template.outputs).map((port) =>
-      createDataPort(nodeId, 'output', port.name, port.dataType, port.required, port.defaultValue),
-    ),
-    nextActions: (overrides?.nextActions ?? template.nextActions).map((port) => createNextActionPort(nodeId, port.label, port.mode)),
-    sbi: overrides?.sbi ?? template.sbi,
+    flowOutputs: (overrides?.flowOutputs ?? template.flowOutputs).map((output) => createFlowOutput(nodeId, output.label)),
     properties: overrides?.properties ?? template.properties,
     sourceCase:
       sourceCase ?? {
         caseId: 'manual',
-        title: 'Manual Card',
-        excerpt: 'Inserted from the constrained card palette.',
+        title: 'Manual Workflow Step',
+        excerpt: 'Inserted from the workflow editor.',
       },
     uiState: {
       tint: template.tint,
@@ -502,57 +335,27 @@ export const createCardFromTemplate = (
   };
 };
 
-const findDataPort = (node: SkillNode, portName: string, direction: DataPortDirection) =>
-  [...(direction === 'input' ? node.inputs : node.outputs)].find((port) => port.name.toLowerCase() === portName.toLowerCase());
+const findFlowOutput = (node: SkillNode, label: string) =>
+  node.flowOutputs.find((output) => output.label.toLowerCase() === label.toLowerCase());
 
-const findNextActionPort = (node: SkillNode, label: string) =>
-  node.nextActions.find((port) => port.label.toLowerCase() === label.toLowerCase());
-
-const createCaseEdge = (
-  edge: CaseTemplate['edges'][number],
-  cardsByKey: Record<string, SkillNode>,
-): SkillEdge => {
+const createCaseEdge = (edge: CaseTemplate['edges'][number], cardsByKey: Record<string, SkillNode>): SkillEdge => {
   const sourceCard = cardsByKey[edge.from.card];
   const targetCard = cardsByKey[edge.to.card];
   if (!sourceCard || !targetCard) {
     throw new Error(`Case edge points at a missing card: ${edge.from.card} -> ${edge.to.card}`);
   }
 
-  if (edge.type === 'data') {
-    const sourcePort = findDataPort(sourceCard, edge.from.port, 'output');
-    const targetPort = findDataPort(targetCard, edge.to.port, 'input');
-    if (!sourcePort || !targetPort) {
-      throw new Error(`Case edge points at a missing data port: ${edge.from.port} -> ${edge.to.port}`);
-    }
-
-    return {
-      id: uuidv4(),
-      fromNodeId: sourceCard.id,
-      fromPortId: sourcePort.id,
-      toNodeId: targetCard.id,
-      toPortId: targetPort.id,
-      edgeType: 'data',
-      label: edge.label,
-      style: {
-        stroke: '#2563eb',
-        animated: false,
-      },
-    };
-  }
-
-  const sourcePort = findNextActionPort(sourceCard, edge.from.port);
-  const targetPort = findNextActionPort(targetCard, edge.to.port);
-  if (!sourcePort || !targetPort) {
-    throw new Error(`Case edge points at a missing next-action port: ${edge.from.port} -> ${edge.to.port}`);
+  const sourceOutput = findFlowOutput(sourceCard, edge.from.output);
+  if (!sourceOutput) {
+    throw new Error(`Case edge points at a missing workflow output: ${edge.from.output}`);
   }
 
   return {
     id: uuidv4(),
     fromNodeId: sourceCard.id,
-    fromPortId: sourcePort.id,
+    fromOutputId: sourceOutput.id,
     toNodeId: targetCard.id,
-    toPortId: targetPort.id,
-    edgeType: 'next_action',
+    kind: 'workflow',
     label: edge.label,
     style: {
       stroke: '#f59e0b',
@@ -563,6 +366,7 @@ const createCaseEdge = (
 
 export const instantiateCase = (caseTemplate: CaseTemplate): SkillDocument => {
   const now = new Date().toISOString();
+  const startNode = createStartNode({ x: 120, y: 180 });
   const cardsByKey = Object.fromEntries(
     caseTemplate.cards.map((card) => {
       const template = getTemplateById(card.templateId);
@@ -580,10 +384,7 @@ export const instantiateCase = (caseTemplate: CaseTemplate): SkillDocument => {
             ...template.properties,
             ...card.properties,
           },
-          inputs: card.inputs,
-          outputs: card.outputs,
-          nextActions: card.nextActions,
-          sbi: card.sbi,
+          flowOutputs: card.flowOutputs,
         },
         {
           caseId: caseTemplate.id,
@@ -596,13 +397,30 @@ export const instantiateCase = (caseTemplate: CaseTemplate): SkillDocument => {
     }),
   ) as Record<string, SkillNode>;
 
-  const nodes = Object.values(cardsByKey);
+  const nodes = [startNode, ...Object.values(cardsByKey)];
   const edges = caseTemplate.edges.map((edge) => createCaseEdge(edge, cardsByKey));
+  const roots = Object.values(cardsByKey).filter(
+    (node) => !edges.some((edge) => edge.toNodeId === node.id),
+  );
+  for (const root of roots) {
+    edges.unshift({
+      id: uuidv4(),
+      fromNodeId: startNode.id,
+      fromOutputId: startNode.flowOutputs[0].id,
+      toNodeId: root.id,
+      kind: 'workflow',
+      label: 'begin',
+      style: {
+        stroke: '#f59e0b',
+        animated: true,
+      },
+    });
+  }
 
   return {
     id: uuidv4(),
     name: caseTemplate.title,
-    type: 'action_graph',
+    type: 'workflow_graph',
     version: '1.0.0',
     nodes,
     edges,
@@ -614,8 +432,8 @@ export const instantiateCase = (caseTemplate: CaseTemplate): SkillDocument => {
     metadata: {
       description: caseTemplate.summary,
       tags: caseTemplate.tags,
-      executionMode: 'Action Flow',
-      sourceDocument: 'S2-2600222.md',
+      executionMode: 'Workflow',
+      sourceDocument: 'ACN_SKILL.md',
     },
     createdAt: now,
     updatedAt: now,
@@ -629,7 +447,7 @@ export const instantiateCase = (caseTemplate: CaseTemplate): SkillDocument => {
         {
           id: uuidv4(),
           level: 'info',
-          message: `Loaded S2 case: ${caseTemplate.title}.`,
+          message: `Loaded workflow case: ${caseTemplate.title}.`,
           timestamp: now,
         },
       ],
@@ -642,13 +460,7 @@ const inferCaseFromPrompt = (prompt: string): CaseTemplate => {
   if (normalized.includes('a2ui') || normalized.includes('negot') || normalized.includes('refine')) {
     return CASE_LIBRARY[1];
   }
-  if (
-    normalized.includes('ue') ||
-    normalized.includes('nf') ||
-    normalized.includes('af') ||
-    normalized.includes('parallel') ||
-    normalized.includes('domain')
-  ) {
+  if (normalized.includes('ue') || normalized.includes('nf') || normalized.includes('af') || normalized.includes('parallel') || normalized.includes('domain')) {
     return CASE_LIBRARY[2];
   }
   return CASE_LIBRARY[0];
@@ -658,9 +470,7 @@ const cloneDocument = (document: SkillDocument): SkillDocument => ({
   ...document,
   nodes: document.nodes.map((node) => ({
     ...node,
-    inputs: node.inputs.map((port) => ({ ...port })),
-    outputs: node.outputs.map((port) => ({ ...port })),
-    nextActions: node.nextActions.map((port) => ({ ...port })),
+    flowOutputs: node.flowOutputs.map((output) => ({ ...output })),
     properties: { ...node.properties },
     sourceCase: { ...node.sourceCase },
     uiState: { ...node.uiState },
@@ -696,14 +506,21 @@ const getAppendOffset = (document: SkillDocument) => {
 };
 
 const getRootActionTarget = (document: SkillDocument) => {
-  const inbound = new Set(
-    document.edges.filter((edge) => edge.edgeType === 'next_action').map((edge) => edge.toNodeId),
-  );
-  return document.nodes.find((node) => !inbound.has(node.id));
+  const inbound = new Set(document.edges.map((edge) => edge.toNodeId));
+  return document.nodes.find((node) => !inbound.has(node.id) && !isStartNode(node));
 };
 
 const getLastNonTerminalCard = (document: SkillDocument) =>
-  [...document.nodes].reverse().find((node) => node.cardType !== 'success' && node.cardType !== 'failure');
+  [...document.nodes]
+    .reverse()
+    .find((node) => node.cardType !== 'success' && node.cardType !== 'failure' && !isStartNode(node));
+
+const hasOnlyStartNode = (document: SkillDocument | null | undefined) => {
+  if (!document) {
+    return false;
+  }
+  return document.nodes.length === 1 && document.nodes.every((node) => isStartNode(node));
+};
 
 export const applyPromptToDocument = (
   prompt: string,
@@ -711,12 +528,12 @@ export const applyPromptToDocument = (
 ): { document: SkillDocument; summary: string; caseTemplate: CaseTemplate; mode: 'created' | 'updated' } => {
   const caseTemplate = inferCaseFromPrompt(prompt);
 
-  if (!currentDocument || currentDocument.nodes.length === 0) {
+  if (!currentDocument || currentDocument.nodes.length === 0 || hasOnlyStartNode(currentDocument)) {
     const document = instantiateCase(caseTemplate);
     document.metadata.description = `Generated from chat prompt: ${prompt}`;
     return {
       document,
-      summary: `Generated ${caseTemplate.title} from the S2 skill-based architecture examples.`,
+      summary: `Generated ${caseTemplate.title} from the ACN markdown workflow example.`,
       caseTemplate,
       mode: 'created',
     };
@@ -725,6 +542,7 @@ export const applyPromptToDocument = (
   const incomingCase = instantiateCase(caseTemplate);
   const next = cloneDocument(currentDocument);
   const offset = getAppendOffset(next);
+  const incomingStartNode = getStartNode(incomingCase);
 
   const shiftedNodes = incomingCase.nodes.map((node) => ({
     ...node,
@@ -733,9 +551,11 @@ export const applyPromptToDocument = (
       y: node.position.y + offset.y,
     },
   }));
+  const appendedNodes = shiftedNodes.filter((node) => !isStartNode(node));
+  const appendedEdges = incomingCase.edges.filter((edge) => edge.fromNodeId !== incomingStartNode?.id);
 
-  next.nodes = [...next.nodes, ...shiftedNodes];
-  next.edges = [...next.edges, ...incomingCase.edges];
+  next.nodes = [...next.nodes, ...appendedNodes];
+  next.edges = [...next.edges, ...appendedEdges];
   next.metadata.tags = Array.from(new Set([...next.metadata.tags, ...caseTemplate.tags]));
   next.updatedAt = new Date().toISOString();
   next.execution.timeline = [
@@ -743,36 +563,32 @@ export const applyPromptToDocument = (
     {
       id: uuidv4(),
       level: 'info',
-      message: `Appended S2 case "${caseTemplate.title}" from prompt: ${prompt}`,
+      message: `Appended workflow case "${caseTemplate.title}" from prompt: ${prompt}`,
       timestamp: new Date().toISOString(),
     },
   ];
 
   const sourceCard = getLastNonTerminalCard(currentDocument);
   const targetCard = getRootActionTarget(incomingCase);
-  if (sourceCard && targetCard) {
-    const sourcePort = sourceCard.nextActions.find((port) => port.mode === 'inout');
-    const targetPort = targetCard.nextActions[0];
-    if (sourcePort && targetPort) {
-      next.edges.push({
-        id: uuidv4(),
-        fromNodeId: sourceCard.id,
-        fromPortId: sourcePort.id,
-        toNodeId: targetCard.id,
-        toPortId: targetPort.id,
-        edgeType: 'next_action',
-        label: 'continue',
-        style: {
-          stroke: '#f59e0b',
-          animated: true,
-        },
-      });
-    }
+  const sourceOutput = sourceCard?.flowOutputs[0];
+  if (sourceCard && sourceOutput && targetCard) {
+    next.edges.push({
+      id: uuidv4(),
+      fromNodeId: sourceCard.id,
+      fromOutputId: sourceOutput.id,
+      toNodeId: targetCard.id,
+      kind: 'workflow',
+      label: 'continue',
+      style: {
+        stroke: '#f59e0b',
+        animated: true,
+      },
+    });
   }
 
   return {
     document: next,
-    summary: `Appended ${caseTemplate.title} and linked it into the current action flow.`,
+    summary: `Appended ${caseTemplate.title} and linked it into the current workflow.`,
     caseTemplate,
     mode: 'updated',
   };
@@ -780,160 +596,187 @@ export const applyPromptToDocument = (
 
 export const createStarterDocument = (): SkillDocument => instantiateCase(CASE_LIBRARY[0]);
 
+export const createStartNode = (position: { x: number; y: number } = { x: 120, y: 180 }) => {
+  const template = CARD_LIBRARY.find((item) => item.cardType === 'start');
+  if (!template) {
+    throw new Error('Missing start template');
+  }
+  return createCardFromTemplate(
+    template,
+    position,
+    {
+      properties: {
+        ...template.properties,
+        fixed: true,
+      },
+    },
+    {
+      caseId: 'system',
+      title: 'Workflow System',
+      excerpt: 'Fixed workflow entry point.',
+    },
+  );
+};
+
+export const createEmptyWorkflowDocument = (): SkillDocument => {
+  const now = new Date().toISOString();
+  const startNode = createStartNode();
+  return {
+    id: uuidv4(),
+    name: 'Untitled Workflow',
+    type: 'workflow_graph',
+    version: '1.0.0',
+    nodes: [startNode],
+    edges: [],
+    viewport: {
+      x: 0,
+      y: 0,
+      zoom: 1,
+    },
+    metadata: {
+      description: 'A workflow skill built from real tools and control steps.',
+      tags: [],
+      executionMode: 'Workflow',
+      sourceDocument: 'ACN_SKILL.md',
+    },
+    createdAt: now,
+    updatedAt: now,
+    validation: {
+      errors: [],
+      warnings: [],
+    },
+    execution: {
+      nodeStatuses: {},
+      timeline: [],
+    },
+  };
+};
+
 export const createCardNode = (cardType: CardType, position: { x: number; y: number }) => {
   const template = CARD_LIBRARY.find((item) => item.cardType === cardType);
   if (!template) {
     throw new Error(`Unknown card type ${cardType}`);
   }
-
   return createCardFromTemplate(template, position);
 };
 
-export const resolvePort = (document: SkillDocument, portId: string) => {
+export const createToolStepNode = (tool: ToolCatalogTool, position: { x: number; y: number }) => {
+  const actionTemplate = CARD_LIBRARY.find((item) => item.cardType === 'action');
+  if (!actionTemplate) {
+    throw new Error('Missing action template');
+  }
+
+  return createCardFromTemplate(
+    actionTemplate,
+    position,
+    {
+      title: tool.name,
+      summary: tool.description,
+      properties: {
+        tool_name: tool.name,
+        parameter_names: tool.parameters.map((parameter) => parameter.name),
+      },
+      flowOutputs: [{ label: 'next' }],
+    },
+    {
+      caseId: 'tool_catalog',
+      title: 'Tool Catalog',
+      excerpt: 'Inserted from the real tool catalog.',
+    },
+  );
+};
+
+export const resolveFlowOutput = (document: SkillDocument, outputId: string) => {
   for (const node of document.nodes) {
-    const input = node.inputs.find((port) => port.id === portId);
-    if (input) {
-      return { node, port: input, family: 'input' as const };
-    }
-    const output = node.outputs.find((port) => port.id === portId);
+    const output = node.flowOutputs.find((item) => item.id === outputId);
     if (output) {
-      return { node, port: output, family: 'output' as const };
-    }
-    const next = node.nextActions.find((port) => port.id === portId);
-    if (next) {
-      return { node, port: next, family: 'next_action' as const };
+      return { node, output };
     }
   }
   return null;
 };
 
-export const createEdgeFromPorts = (
-  document: SkillDocument,
-  sourcePortId: string,
-  targetPortId: string,
-): SkillEdge | null => {
-  const source = resolvePort(document, sourcePortId);
-  const target = resolvePort(document, targetPortId);
+export const createEdgeFromPorts = (document: SkillDocument, sourceOutputId: string, targetNodeId: string): SkillEdge | null => {
+  const source = resolveFlowOutput(document, sourceOutputId);
+  const target = document.nodes.find((node) => node.id === targetNodeId);
   if (!source || !target) {
     return null;
   }
-
-  if (source.family === 'output' && target.family === 'input') {
-    const duplicate = document.edges.find(
-      (edge) =>
-        edge.edgeType === 'data' &&
-        edge.fromPortId === source.port.id &&
-        edge.toPortId === target.port.id,
-    );
-    if (duplicate) {
-      return null;
-    }
-    return {
-      id: uuidv4(),
-      fromNodeId: source.node.id,
-      fromPortId: source.port.id,
-      toNodeId: target.node.id,
-      toPortId: target.port.id,
-      edgeType: 'data',
-      style: {
-        stroke: '#2563eb',
-        animated: false,
-      },
-    };
+  if (source.node.id === target.id) {
+    return null;
+  }
+  if (isStartNode(target)) {
+    return null;
+  }
+  if (source.node.cardType === 'success' || source.node.cardType === 'failure') {
+    return null;
   }
 
-  if (source.family === 'next_action' && target.family === 'next_action') {
-    if (source.node.id === target.node.id && source.port.id === target.port.id) {
-      return null;
-    }
-    const duplicate = document.edges.find(
-      (edge) =>
-        edge.edgeType === 'next_action' &&
-        edge.fromPortId === source.port.id &&
-        edge.toPortId === target.port.id,
-    );
-    if (duplicate) {
-      return null;
-    }
-    if (source.node.cardType === 'success' || source.node.cardType === 'failure') {
-      return null;
-    }
-    return {
-      id: uuidv4(),
-      fromNodeId: source.node.id,
-      fromPortId: source.port.id,
-      toNodeId: target.node.id,
-      toPortId: target.port.id,
-      edgeType: 'next_action',
-      label: source.port.label !== target.port.label ? source.port.label : undefined,
-      style: {
-        stroke: '#f59e0b',
-        animated: true,
-      },
-    };
+  const duplicate = document.edges.find(
+    (edge) => edge.fromOutputId === source.output.id && edge.toNodeId === target.id,
+  );
+  if (duplicate) {
+    return null;
   }
 
-  return null;
+  return {
+    id: uuidv4(),
+    fromNodeId: source.node.id,
+    fromOutputId: source.output.id,
+    toNodeId: target.id,
+    kind: 'workflow',
+    label: source.output.label === 'next' ? undefined : source.output.label,
+    style: {
+      stroke: '#f59e0b',
+      animated: true,
+    },
+  };
 };
 
 export const validateDocument = (document: SkillDocument) => {
   const errors: string[] = [];
   const warnings: string[] = [];
-  const dataCardTypes = new Set<CardType>([
-    'constant',
-    'user_container',
-    'device_container',
-    'network_container',
-    'app_container',
-  ]);
+  const startNodes = document.nodes.filter((node) => isStartNode(node));
+
+  if (startNodes.length !== 1) {
+    errors.push('Workflow must contain exactly one start step.');
+  }
 
   document.nodes.forEach((node) => {
     if (!node.title.trim()) {
-      errors.push(`Card ${node.id} is missing a title.`);
+      errors.push(`Step ${node.id} is missing a title.`);
     }
 
-    node.inputs.forEach((input) => {
-      const inbound = document.edges.find((edge) => edge.toPortId === input.id);
-      if (input.required && !inbound && input.defaultValue === undefined) {
-        warnings.push(`Card "${node.title}" is missing required input "${input.name}".`);
+    const outbound = document.edges.filter((edge) => edge.fromNodeId === node.id);
+    const inbound = document.edges.filter((edge) => edge.toNodeId === node.id);
+    if (isStartNode(node)) {
+      if (inbound.length > 0) {
+        errors.push('Start step cannot have incoming workflow links.');
       }
-    });
-
-    const outboundNext = document.edges.filter(
-      (edge) =>
-        edge.edgeType === 'next_action' &&
-        edge.fromNodeId === node.id &&
-        node.nextActions.some((port) => port.id === edge.fromPortId),
-    );
-
-    if ((node.cardType === 'success' || node.cardType === 'failure') && outboundNext.length > 0) {
-      errors.push(`Terminal card "${node.title}" cannot have outgoing next action links.`);
+      if (document.nodes.length > 1 && outbound.length === 0) {
+        warnings.push('Start step is not linked to any workflow step.');
+      }
+      return;
     }
-
-    if (!dataCardTypes.has(node.cardType) && node.cardType !== 'success' && node.cardType !== 'failure' && outboundNext.length === 0) {
-      warnings.push(`Card "${node.title}" has no outgoing next action path.`);
+    if ((node.cardType === 'success' || node.cardType === 'failure') && outbound.length > 0) {
+      errors.push(`Terminal step "${node.title}" cannot have outgoing workflow links.`);
+    }
+    if (node.cardType !== 'success' && node.cardType !== 'failure' && outbound.length === 0) {
+      warnings.push(`Step "${node.title}" has no outgoing workflow path.`);
+    }
+    if (node.cardType === 'action') {
+      const toolName = typeof node.properties.tool_name === 'string' ? node.properties.tool_name.trim() : '';
+      if (!toolName) {
+        warnings.push(`Action step "${node.title}" is not bound to a real tool yet.`);
+      }
     }
   });
 
   document.edges.forEach((edge) => {
-    const source = resolvePort(document, edge.fromPortId);
-    const target = resolvePort(document, edge.toPortId);
-
+    const source = resolveFlowOutput(document, edge.fromOutputId);
+    const target = document.nodes.find((node) => node.id === edge.toNodeId);
     if (!source || !target) {
-      errors.push(`Link ${edge.id} points to a missing port.`);
-      return;
-    }
-
-    if (edge.edgeType === 'data') {
-      if (source.family !== 'output' || target.family !== 'input') {
-        errors.push(`Data link ${edge.id} must connect outputs to inputs.`);
-      }
-    }
-
-    if (edge.edgeType === 'next_action') {
-      if (source.family !== 'next_action' || target.family !== 'next_action') {
-        errors.push(`Next action link ${edge.id} must connect next-action ports.`);
-      }
+      errors.push(`Workflow link ${edge.id} points to a missing step or output.`);
     }
   });
 
@@ -941,25 +784,172 @@ export const validateDocument = (document: SkillDocument) => {
 };
 
 export const autoLayoutDocument = (document: SkillDocument): SkillDocument => {
-  const nodes = document.nodes.map((node, index) => ({
-    ...node,
-    position: {
-      x: 120 + (index % 3) * 360,
-      y: 120 + Math.floor(index / 3) * 260,
-    },
-  }));
+  if (document.nodes.length <= 1) {
+    return {
+      ...document,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  const horizontalGap = 160;
+  const verticalGap = 88;
+  const baseX = 96;
+  const baseY = 88;
+
+  const byId = new Map(document.nodes.map((node) => [node.id, node]));
+  const startNode = getStartNode(document);
+  const incomingCount = new Map(document.nodes.map((node) => [node.id, 0]));
+  const childrenByNode = new Map<string, string[]>();
+  const parentsByNode = new Map<string, string[]>();
+
+  for (const node of document.nodes) {
+    childrenByNode.set(node.id, []);
+    parentsByNode.set(node.id, []);
+  }
+
+  for (const edge of document.edges) {
+    childrenByNode.get(edge.fromNodeId)?.push(edge.toNodeId);
+    parentsByNode.get(edge.toNodeId)?.push(edge.fromNodeId);
+    incomingCount.set(edge.toNodeId, (incomingCount.get(edge.toNodeId) ?? 0) + 1);
+  }
+
+  const roots = startNode
+    ? [startNode]
+    : document.nodes
+        .filter((node) => (incomingCount.get(node.id) ?? 0) === 0)
+        .sort((left, right) => left.position.x - right.position.x || left.position.y - right.position.y);
+
+  const queue = [...roots.map((node) => node.id)];
+  const depthByNode = new Map<string, number>(roots.map((node) => [node.id, 0]));
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!;
+    const currentDepth = depthByNode.get(nodeId) ?? 0;
+    for (const childId of childrenByNode.get(nodeId) ?? []) {
+      const nextDepth = currentDepth + 1;
+      const existingDepth = depthByNode.get(childId);
+      if (existingDepth === undefined || nextDepth > existingDepth) {
+        depthByNode.set(childId, nextDepth);
+      }
+      queue.push(childId);
+    }
+  }
+
+  for (const node of document.nodes) {
+    if (!depthByNode.has(node.id)) {
+      depthByNode.set(node.id, startNode && !isStartNode(node) ? 1 : 0);
+    }
+  }
+
+  const levels = new Map<number, string[]>();
+  for (const node of document.nodes) {
+    const depth = depthByNode.get(node.id) ?? 0;
+    const level = levels.get(depth) ?? [];
+    level.push(node.id);
+    levels.set(depth, level);
+  }
+
+  const orderIndex = new Map<string, number>();
+  const sortedDepths = [...levels.keys()].sort((a, b) => a - b);
+
+  for (const depth of sortedDepths) {
+    const level = levels.get(depth) ?? [];
+    level.sort((leftId, rightId) => {
+      if (depth === 0) {
+        const left = byId.get(leftId)!;
+        const right = byId.get(rightId)!;
+        return left.position.y - right.position.y || left.position.x - right.position.x;
+      }
+
+      const leftParents = parentsByNode.get(leftId) ?? [];
+      const rightParents = parentsByNode.get(rightId) ?? [];
+      const leftAvg =
+        leftParents.length > 0
+          ? leftParents.reduce((sum, parentId) => sum + (orderIndex.get(parentId) ?? 0), 0) / leftParents.length
+          : Number.MAX_SAFE_INTEGER;
+      const rightAvg =
+        rightParents.length > 0
+          ? rightParents.reduce((sum, parentId) => sum + (orderIndex.get(parentId) ?? 0), 0) / rightParents.length
+          : Number.MAX_SAFE_INTEGER;
+      if (leftAvg !== rightAvg) {
+        return leftAvg - rightAvg;
+      }
+      const left = byId.get(leftId)!;
+      const right = byId.get(rightId)!;
+      return left.position.y - right.position.y || left.position.x - right.position.x;
+    });
+
+    for (let index = 0; index < level.length; index += 1) {
+      orderIndex.set(level[index], index);
+    }
+  }
+
+  const maxNodeWidth = Math.max(...document.nodes.map((node) => node.size.w));
+  const columnWidth = maxNodeWidth + horizontalGap;
+  const levelHeights = new Map<number, number>();
+
+  for (const depth of sortedDepths) {
+    const level = levels.get(depth) ?? [];
+    const totalHeight = level.reduce((sum, nodeId) => sum + (byId.get(nodeId)?.size.h ?? 220), 0) + Math.max(0, level.length - 1) * verticalGap;
+    levelHeights.set(depth, totalHeight);
+  }
+
+  const maxColumnHeight = Math.max(...[...levelHeights.values()]);
+  const positionedById = new Map<string, SkillNode>();
+
+  for (const depth of sortedDepths) {
+    const level = levels.get(depth) ?? [];
+    const levelHeight = levelHeights.get(depth) ?? 0;
+    let currentY = baseY + (maxColumnHeight - levelHeight) / 2;
+
+    for (const nodeId of level) {
+      const node = byId.get(nodeId);
+      if (!node) {
+        continue;
+      }
+      positionedById.set(nodeId, {
+        ...node,
+        position: {
+          x: baseX + depth * columnWidth,
+          y: currentY,
+        },
+      });
+      currentY += node.size.h + verticalGap;
+    }
+  }
+
+  if (startNode) {
+    const positionedStart = positionedById.get(startNode.id);
+    const startChildren = childrenByNode.get(startNode.id) ?? [];
+    if (positionedStart && startChildren.length > 0) {
+      const childCenters = startChildren
+        .map((childId) => positionedById.get(childId))
+        .filter((node): node is SkillNode => Boolean(node))
+        .map((node) => node.position.y + node.size.h / 2);
+
+      if (childCenters.length > 0) {
+        positionedById.set(startNode.id, {
+          ...positionedStart,
+          position: {
+            x: baseX,
+            y: Math.max(baseY, childCenters.reduce((sum, value) => sum + value, 0) / childCenters.length - positionedStart.size.h / 2),
+          },
+        });
+      }
+    }
+  }
+
+  const nextNodes = document.nodes.map((node) => positionedById.get(node.id) ?? node);
 
   return {
     ...document,
-    nodes,
+    nodes: nextNodes,
     updatedAt: new Date().toISOString(),
   };
 };
 
 export const getExecutionOrder = (document: SkillDocument) => {
-  const inboundTargets = new Set(
-    document.edges.filter((edge) => edge.edgeType === 'next_action').map((edge) => edge.toNodeId),
-  );
+  const inboundTargets = new Set(document.edges.map((edge) => edge.toNodeId));
   const start = document.nodes.find((node) => !inboundTargets.has(node.id)) ?? document.nodes[0];
   if (!start) {
     return [];
@@ -979,11 +969,10 @@ export const getExecutionOrder = (document: SkillDocument) => {
     if (!node) {
       continue;
     }
-    order.push(node);
-    const nextNodeIds = document.edges
-      .filter((edge) => edge.edgeType === 'next_action' && edge.fromNodeId === node.id)
-      .map((edge) => edge.toNodeId);
-    queue.push(...nextNodeIds);
+    if (!isStartNode(node)) {
+      order.push(node);
+    }
+    queue.push(...document.edges.filter((edge) => edge.fromNodeId === node.id).map((edge) => edge.toNodeId));
   }
 
   return order;

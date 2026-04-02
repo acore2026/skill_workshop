@@ -1,0 +1,100 @@
+{
+  "tools": [
+    {
+      "name": "Create_Or_Update_Subnet_Context_tool",
+      "description": "SM creates the network context for a new collaborative subnet, including allocation of a subnet ID.",
+      "parameters": [
+        {
+          "name": "ue_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "agent_list",
+          "type": "list",
+          "required": true,
+          "description": "Agent ID list that have been connected to the subnet"
+        },
+        {
+          "name": "subnet_specification",
+          "type": "int",
+          "required": true,
+          "description": "Number of agents that can be connected to the subnet."
+        }
+      ]
+    },
+    {
+      "name": "Create_Subnet_PDUSession_tool",
+      "description": "SM creates a PDU session connecting an agent to a subnet.",
+      "parameters": [
+        {
+          "name": "agent_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "subnet_id",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "Issue_Access_Token_tool",
+      "description": "Interacts with the IDM to generate an access token for an agent requiring entry into the subnet.",
+      "parameters": [
+        {
+          "name": "subnet_id",
+          "type": "string",
+          "required": true,
+          "description": "Subnet ID"
+        },
+        {
+          "name": "agent_id",
+          "type": "string",
+          "required": true,
+          "description": "New agent to be connected to the subnet"
+        }
+      ]
+    },
+    {
+      "name": "Subscription_tool",
+      "description": "Queries UDM to validate whether a specified user or agent has subscribed to a particular network service capability.",
+      "parameters": [
+        {
+          "name": "ue_id",
+          "type": "string",
+          "required": true,
+          "description": "UE information--SUCI"
+        },
+        {
+          "name": "service_type",
+          "type": "string",
+          "required": true,
+          "description": "ACN service type, e.g., SubnetAccess, SubnetCreate"
+        }
+      ]
+    },
+    {
+      "name": "Validate_Access_Token_tool",
+      "description": "Interacts with IDM to validate whether a token is valid for a specified subnet.",
+      "parameters": [
+        {
+          "name": "agent_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "subnet_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "provided_token",
+          "type": "dict",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

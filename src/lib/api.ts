@@ -1,8 +1,30 @@
 export interface GenerateSkillRequest {
   runId: string;
   messages: Array<Record<string, unknown>>;
-  current_skill_yaml?: string;
+  current_skill_markdown?: string;
+  reasoning_enabled?: boolean;
   context?: Record<string, unknown>;
+}
+
+export interface ToolCatalogParameter {
+  name: string;
+  type: string;
+  required: boolean;
+  description?: string;
+}
+
+export interface ToolCatalogEntry {
+  name: string;
+  description: string;
+  required_params: string[];
+  all_params: string[];
+  parameters: ToolCatalogParameter[];
+}
+
+export interface ToolCatalogResponse {
+  tools: ToolCatalogEntry[];
+  tool_names: string[];
+  by_name: Record<string, ToolCatalogEntry>;
 }
 
 export interface BackendStreamEvent {
@@ -16,13 +38,18 @@ export interface BackendStreamEvent {
   payload?: Record<string, unknown>;
 }
 
+const getEnv = (key: string) => {
+  const metaEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
+  return metaEnv?.[key]?.trim();
+};
+
 const resolveApiBaseUrl = () => {
-  const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+  const configuredBaseUrl = getEnv('VITE_API_BASE_URL');
   if (configuredBaseUrl) {
     return configuredBaseUrl.replace(/\/$/, '');
   }
 
-  const configuredPort = (import.meta.env.VITE_API_PORT as string | undefined)?.trim() ?? '8082';
+  const configuredPort = getEnv('VITE_API_PORT') ?? '8082';
 
   if (typeof window !== 'undefined') {
     const { protocol, hostname } = window.location;
@@ -33,7 +60,7 @@ const resolveApiBaseUrl = () => {
 };
 
 const resolveWsBaseUrl = () => {
-  const configuredBaseUrl = (import.meta.env.VITE_WS_BASE_URL as string | undefined)?.trim();
+  const configuredBaseUrl = getEnv('VITE_WS_BASE_URL');
   if (configuredBaseUrl) {
     return configuredBaseUrl.replace(/\/$/, '');
   }
@@ -72,7 +99,8 @@ export const streamSkillGeneration = (
           type: 'start_run',
           run_id: payload.runId,
           messages: payload.messages,
-          current_skill_yaml: payload.current_skill_yaml ?? '',
+          current_skill_markdown: payload.current_skill_markdown ?? '',
+          reasoning_enabled: payload.reasoning_enabled ?? true,
           context: payload.context ?? {},
         }),
       );
@@ -126,4 +154,16 @@ export const requestBackendHealth = async () => {
   }
 
   return data as { ok: boolean };
+};
+
+export const requestToolCatalog = async () => {
+  const response = await fetch(`${apiBaseUrl}/tools`);
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+
+  if (!response.ok) {
+    throw new Error(data?.error ?? 'Tool catalog request failed.');
+  }
+
+  return data as ToolCatalogResponse;
 };

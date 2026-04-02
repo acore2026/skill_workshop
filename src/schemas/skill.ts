@@ -1,49 +1,27 @@
 import { z } from 'zod';
 
-export const GraphTypeSchema = z.enum(['action_graph']);
+export const GraphTypeSchema = z.enum(['workflow_graph']);
 export const CardTypeSchema = z.enum([
+  'start',
   'action',
   'branch',
   'loop',
   'parallel',
   'success',
   'failure',
-  'constant',
-  'user_container',
-  'device_container',
-  'network_container',
-  'app_container',
 ]);
-export const DataPortDirectionSchema = z.enum(['input', 'output']);
-export const NextActionPortModeSchema = z.enum(['inout', 'target']);
-export const EdgeTypeSchema = z.enum(['data', 'next_action']);
+export const WorkflowNodeTypeSchema = z.enum(['tool_step', 'control']);
+export const WorkflowEdgeKindSchema = z.enum(['workflow']);
 
-export const DataPortSchema = z.object({
-  id: z.string(),
-  nodeId: z.string(),
-  direction: DataPortDirectionSchema,
-  name: z.string(),
-  dataType: z.string(),
-  required: z.boolean().default(false),
-  defaultValue: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
-});
-
-export const SbiActionSchema = z.object({
-  service: z.string(),
-  operation: z.string(),
-  method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
-  endpoint: z.string(),
-});
-
-export const NextActionPortSchema = z.object({
+export const WorkflowOutputSchema = z.object({
   id: z.string(),
   nodeId: z.string(),
   label: z.string(),
-  mode: NextActionPortModeSchema.default('inout'),
 });
 
-export const CardNodeSchema = z.object({
+export const WorkflowNodeSchema = z.object({
   id: z.string(),
+  nodeType: WorkflowNodeTypeSchema,
   cardType: CardTypeSchema,
   title: z.string(),
   summary: z.string(),
@@ -55,10 +33,7 @@ export const CardNodeSchema = z.object({
     w: z.number(),
     h: z.number(),
   }),
-  inputs: z.array(DataPortSchema).default([]),
-  outputs: z.array(DataPortSchema).default([]),
-  nextActions: z.array(NextActionPortSchema).default([]),
-  sbi: SbiActionSchema.optional(),
+  flowOutputs: z.array(WorkflowOutputSchema).default([]),
   properties: z.record(z.string(), z.unknown()).default({}),
   sourceCase: z.object({
     caseId: z.string(),
@@ -82,13 +57,12 @@ export const CardNodeSchema = z.object({
     }),
 });
 
-export const GraphEdgeSchema = z.object({
+export const WorkflowEdgeSchema = z.object({
   id: z.string(),
   fromNodeId: z.string(),
-  fromPortId: z.string(),
+  fromOutputId: z.string(),
   toNodeId: z.string(),
-  toPortId: z.string(),
-  edgeType: EdgeTypeSchema,
+  kind: WorkflowEdgeKindSchema.default('workflow'),
   label: z.string().optional(),
   style: z
     .object({
@@ -98,13 +72,37 @@ export const GraphEdgeSchema = z.object({
     .default({}),
 });
 
+export const MarkdownSkillDocumentSchema = z.object({
+  frontMatter: z.object({
+    name: z.string(),
+    description: z.string(),
+  }),
+  overview: z.string(),
+  toolInventory: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string(),
+    }),
+  ),
+  workflow: z.array(
+    z.object({
+      call: z.string().optional(),
+      abort_if: z.string().optional(),
+      done: z.string().optional(),
+    }),
+  ),
+  criticalRules: z.array(z.string()),
+  outputFormat: z.array(z.string()),
+  raw: z.string(),
+});
+
 export const SkillDocumentSchema = z.object({
   id: z.string(),
   name: z.string(),
-  type: GraphTypeSchema.default('action_graph'),
+  type: GraphTypeSchema.default('workflow_graph'),
   version: z.string().default('1.0.0'),
-  nodes: z.array(CardNodeSchema),
-  edges: z.array(GraphEdgeSchema),
+  nodes: z.array(WorkflowNodeSchema),
+  edges: z.array(WorkflowEdgeSchema),
   viewport: z.object({
     x: z.number().default(0),
     y: z.number().default(0),
@@ -113,8 +111,8 @@ export const SkillDocumentSchema = z.object({
   metadata: z.object({
     description: z.string().default(''),
     tags: z.array(z.string()).default([]),
-    executionMode: z.string().default('Action Flow'),
-    sourceDocument: z.string().default('S2-2600222.md'),
+    executionMode: z.string().default('Workflow'),
+    sourceDocument: z.string().default('ACN_SKILL.md'),
   }),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -144,10 +142,10 @@ export const SkillDocumentSchema = z.object({
 
 export type GraphType = z.infer<typeof GraphTypeSchema>;
 export type CardType = z.infer<typeof CardTypeSchema>;
-export type DataPort = z.infer<typeof DataPortSchema>;
-export type NextActionPort = z.infer<typeof NextActionPortSchema>;
-export type SbiAction = z.infer<typeof SbiActionSchema>;
-export type EdgeType = z.infer<typeof EdgeTypeSchema>;
-export type SkillNode = z.infer<typeof CardNodeSchema>;
-export type SkillEdge = z.infer<typeof GraphEdgeSchema>;
+export type WorkflowNodeType = z.infer<typeof WorkflowNodeTypeSchema>;
+export type WorkflowOutput = z.infer<typeof WorkflowOutputSchema>;
+export type WorkflowEdgeKind = z.infer<typeof WorkflowEdgeKindSchema>;
+export type SkillNode = z.infer<typeof WorkflowNodeSchema>;
+export type SkillEdge = z.infer<typeof WorkflowEdgeSchema>;
 export type SkillDocument = z.infer<typeof SkillDocumentSchema>;
+export type MarkdownSkillDocument = z.infer<typeof MarkdownSkillDocumentSchema>;

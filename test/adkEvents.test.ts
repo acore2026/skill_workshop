@@ -15,11 +15,11 @@ test('ADK event adapter derives stage, message id, and display text', () => {
   const payload: ADKSessionEventPayload = {
     id: 'evt-1',
     invocation_id: 'inv-1',
-    author: 'analysis_agent',
+    author: 'intent_analysis_agent',
     text: 'Analyze the requested gaming flow.',
   };
 
-  assert.equal(getADKMessageId(payload), 'analysis_agent:inv-1');
+  assert.equal(getADKMessageId(payload), 'intent_analysis_agent:inv-1');
   assert.equal(getADKStage(payload), 'analysis');
   assert.equal(getADKDisplayText(payload), 'Analyze the requested gaming flow.');
 });

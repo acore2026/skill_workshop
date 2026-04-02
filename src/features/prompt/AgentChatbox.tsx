@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { AnimatePresence, motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import { Bot, ChevronDown, ChevronRight, Loader2, PanelLeftClose, PanelLeftOpen, Send, Terminal, Trash2, User } from 'lucide-react';
+import { Bot, Check, ChevronDown, ChevronRight, Loader2, PanelLeftClose, PanelLeftOpen, Send, Terminal, Trash2, User } from 'lucide-react';
 import { requestBackendHealth } from '../../lib/api';
 import type { ChatMessage } from '../../store/useStore';
 import { useStore } from '../../store/useStore';
@@ -42,26 +42,60 @@ const getStreamingMarkdownParts = (content: string) => {
   return { stable: '', tail: content };
 };
 
+const getThoughtPreview = (content: string, limit = 120) => {
+  const lines = content
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const latestLine = lines.at(-1) ?? '';
+  if (!latestLine) {
+    return '';
+  }
+  if (latestLine.length <= limit) {
+    return latestLine;
+  }
+  return `...${latestLine.slice(-(limit - 3)).trimStart()}`;
+};
+
+const splitMarkdownFrontMatter = (markdown: string) => {
+  const match = markdown.match(/^---\n([\s\S]*?)\n---\n?/);
+  if (!match) {
+    return { frontMatter: '', body: markdown };
+  }
+
+  return {
+    frontMatter: `---\n${match[1]}\n---`,
+    body: markdown.slice(match[0].length).trimStart(),
+  };
+};
+
+const getStatusTone = (content: string) => (/passed\.|completed\.$/i.test(content.trim()) ? 'complete' : 'progress');
+
 const AgentChatbox: React.FC<AgentChatboxProps> = ({ collapsed, onToggleCollapse }) => {
-  const gamingExamplePrompt = 'Enable Turbo Mode for Gaming';
+  const examplePrompt = 'Write a skill: Connect a new embodied agent to an agent network subnet';
+  const exampleButtonLabel = 'Connect a new embodied agent to an agent network subnet';
   const [input, setInput] = useState('');
   const [backendHealth, setBackendHealth] = useState<'unknown' | 'checking' | 'online' | 'offline'>('unknown');
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const {
     messages,
     addMessage,
     clearMessages,
     generationModel,
+    reasoningEnabled,
     setGenerationModel,
+    setReasoningEnabled,
     appState,
     setAppState,
     applyAgentPrompt,
   } = useStore();
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && stickToBottomRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
@@ -133,6 +167,7 @@ const AgentChatbox: React.FC<AgentChatboxProps> = ({ collapsed, onToggleCollapse
     addMessage(userMessage);
     setInput('');
     setAppState('generating');
+    stickToBottomRef.current = true;
 
     try {
       await new Promise((resolve) => window.setTimeout(resolve, 150));
@@ -149,7 +184,7 @@ const AgentChatbox: React.FC<AgentChatboxProps> = ({ collapsed, onToggleCollapse
   };
 
   const handleExamplePrompt = async () => {
-    await submitPrompt(gamingExamplePrompt);
+    await submitPrompt(examplePrompt);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -157,6 +192,42 @@ const AgentChatbox: React.FC<AgentChatboxProps> = ({ collapsed, onToggleCollapse
       e.preventDefault();
       handleSend();
     }
+  };
+
+  const toggleThought = (messageId: string) => {
+    setExpandedThoughts((current) => ({
+      ...current,
+      [messageId]: !current[messageId],
+    }));
+  };
+
+  const handleMessagesScroll = () => {
+    if (!scrollRef.current) {
+      return;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    stickToBottomRef.current = scrollHeight - (scrollTop + clientHeight) < 48;
+  };
+
+  const renderMarkdownBlock = (markdown: string, streaming = false) => {
+    const { frontMatter, body } = splitMarkdownFrontMatter(markdown);
+    const streamingParts = streaming ? getStreamingMarkdownParts(body) : null;
+
+    return (
+      <>
+        {frontMatter ? <pre className="message-markdown-frontmatter">{frontMatter}</pre> : null}
+        {body ? (
+          streaming ? (
+            <>
+              {streamingParts?.stable ? <ReactMarkdown>{streamingParts.stable}</ReactMarkdown> : null}
+              {streamingParts?.tail ? <div className="message-streaming-text">{streamingParts.tail}</div> : null}
+            </>
+          ) : (
+            <ReactMarkdown>{body}</ReactMarkdown>
+          )
+        ) : null}
+      </>
+    );
   };
 
   return (
@@ -190,7 +261,7 @@ const AgentChatbox: React.FC<AgentChatboxProps> = ({ collapsed, onToggleCollapse
         </div>
       </div>
 
-      <div className="messages-container" ref={scrollRef}>
+      <div className="messages-container" ref={scrollRef} onScroll={handleMessagesScroll}>
         <AnimatePresence initial={false}>
           {messages.length === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="empty-chat">
@@ -198,26 +269,33 @@ const AgentChatbox: React.FC<AgentChatboxProps> = ({ collapsed, onToggleCollapse
               <h3>Start With A Skill Idea</h3>
               <p>Describe the flow you want to create, and your agent will help turn it into a skill.</p>
               <button type="button" className="example-prompt-btn" onClick={handleExamplePrompt}>
-                Example: {gamingExamplePrompt}
+                Example: {exampleButtonLabel}
               </button>
             </motion.div>
           )}
 
           {messages.map((msg) => (
             (() => {
-              if (msg.streaming && !msg.content.trim()) {
+              const hasMainContent = Boolean(msg.content.trim());
+              const hasThoughtContent = Boolean(msg.thought?.trim());
+              if (msg.streaming && !hasMainContent && !hasThoughtContent) {
                 return null;
               }
-              const streamingParts = msg.streaming ? getStreamingMarkdownParts(msg.content) : null;
+              const thoughtStreamingParts = msg.thoughtStreaming ? getStreamingMarkdownParts(msg.thought ?? '') : null;
+              const thoughtPreview = getThoughtPreview(msg.thought ?? '');
+              const thoughtExpanded = Boolean(expandedThoughts[msg.id]);
               if (msg.displayType === 'status') {
+                const statusTone = getStatusTone(msg.content);
                 return (
                   <motion.div
                     key={msg.id}
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="message-status-row"
+                    className={`message-status-row ${statusTone === 'complete' ? 'is-complete' : ''}`}
                   >
-                    <span className="message-status-beacon" />
+                    <span className="message-status-beacon">
+                      {statusTone === 'complete' ? <Check size={10} strokeWidth={3} /> : null}
+                    </span>
                     <span className="message-status-text">{msg.content}</span>
                     <span className="message-status-time">
                       {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -230,20 +308,58 @@ const AgentChatbox: React.FC<AgentChatboxProps> = ({ collapsed, onToggleCollapse
               key={msg.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`message-bubble-wrapper ${msg.role}`}
+              className={`message-bubble-wrapper ${msg.role} ${(msg.streaming || msg.thoughtStreaming) ? 'is-streaming' : ''}`}
             >
               <div className="message-avatar">{msg.role === 'user' ? <User size={14} /> : <Bot size={14} />}</div>
-              <div className="message-bubble">
-                <div className="message-content">
-                  {msg.streaming ? (
-                    <>
-                      {streamingParts?.stable ? <ReactMarkdown>{streamingParts.stable}</ReactMarkdown> : null}
-                      {streamingParts?.tail ? <div className="message-streaming-text">{streamingParts.tail}</div> : null}
-                    </>
-                  ) : (
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  )}
-                </div>
+              <div className={`message-bubble ${(msg.streaming || msg.thoughtStreaming) ? 'is-streaming' : ''}`}>
+                {hasThoughtContent && (
+                  <div className="message-thinking">
+                    <button
+                      type="button"
+                      className={`message-thinking-toggle ${thoughtExpanded ? 'is-open' : ''}`}
+                      onClick={() => toggleThought(msg.id)}
+                    >
+                      <span className="message-thinking-toggle-head">
+                        <span className="message-thinking-toggle-main">
+                          {thoughtExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                          <span>Thinking</span>
+                        </span>
+                        {msg.thoughtStreaming ? <span className="message-thinking-live-dot" /> : null}
+                      </span>
+                      {thoughtPreview ? (
+                        <span className="message-thinking-preview">{thoughtPreview}</span>
+                      ) : null}
+                    </button>
+                    {thoughtExpanded && (
+                      <div className="message-thinking-panel">
+                        {msg.thoughtStreaming ? (
+                          <>
+                            {renderMarkdownBlock(thoughtStreamingParts?.stable ?? '')}
+                            {thoughtStreamingParts?.tail ? <div className="message-streaming-text">{thoughtStreamingParts.tail}</div> : null}
+                          </>
+                        ) : (
+                          renderMarkdownBlock(msg.thought ?? '')
+                        )}
+                      </div>
+                    )}
+                    {msg.thoughtStreaming ? (
+                      <div className="message-thinking-status">
+                        <span className="message-thinking-status-ring" />
+                        <span>Analysing</span>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
+                {hasMainContent && (
+                  <div className="message-content">
+                    {msg.streaming ? (
+                      renderMarkdownBlock(msg.content, true)
+                    ) : (
+                      renderMarkdownBlock(msg.content)
+                    )}
+                  </div>
+                )}
 
                 {msg.toolCalls && msg.toolCalls.length > 0 && (
                   <div className="chat-telemetry">
@@ -286,59 +402,62 @@ const AgentChatbox: React.FC<AgentChatboxProps> = ({ collapsed, onToggleCollapse
             })()
           ))}
 
-          {appState === 'generating' && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="message-bubble-wrapper assistant">
-              <div className="message-avatar">
-                <Bot size={14} />
-              </div>
-              <div className="message-bubble loading">
-                <Loader2 size={16} className="animate-spin" />
-                <span>Thinking...</span>
-              </div>
-            </motion.div>
-          )}
         </AnimatePresence>
       </div>
 
       <div className="chat-input-area">
         <div className="chat-input-topbar">
-          <div className="model-menu" ref={modelMenuRef}>
+          <div className="chat-controls-row">
+            <div className="model-menu" ref={modelMenuRef}>
+              <button
+                type="button"
+                className="model-menu-trigger"
+                onClick={() => setModelMenuOpen((current) => !current)}
+                disabled={appState === 'generating'}
+              >
+                <span className={`model-status-dot ${currentModelHealthy ? 'is-green' : 'is-red'}`} />
+                <span className="model-menu-value">{currentModelLabel}</span>
+                <ChevronDown size={14} className={`model-menu-chevron ${modelMenuOpen ? 'is-open' : ''}`} />
+              </button>
+              {modelMenuOpen && (
+                <div className="model-menu-popover">
+                  <button
+                    type="button"
+                    className={`model-menu-item ${generationModel === 'kimi-k2.5' ? 'is-active' : ''}`}
+                    onClick={() => {
+                      setGenerationModel('kimi-k2.5');
+                      setModelMenuOpen(false);
+                    }}
+                  >
+                    <span className={`model-status-dot ${backendHealth === 'online' ? 'is-green' : 'is-red'}`} />
+                    <span>kimi-k2.5</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`model-menu-item ${generationModel === 'qwen3-32b' ? 'is-active' : ''}`}
+                    onClick={() => {
+                      setGenerationModel('qwen3-32b');
+                      setModelMenuOpen(false);
+                    }}
+                  >
+                    <span className="model-status-dot is-green" />
+                    <span>Qwen3-32B</span>
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               type="button"
-              className="model-menu-trigger"
-              onClick={() => setModelMenuOpen((current) => !current)}
-              disabled={appState === 'generating'}
+              className={`reasoning-toggle ${reasoningEnabled ? 'is-on' : 'is-off'} ${generationModel !== 'kimi-k2.5' ? 'is-disabled' : ''}`}
+              onClick={() => generationModel === 'kimi-k2.5' && setReasoningEnabled(!reasoningEnabled)}
+              disabled={appState === 'generating' || generationModel !== 'kimi-k2.5'}
+              title={generationModel === 'kimi-k2.5' ? 'Toggle reasoning for kimi-k2.5' : 'Reasoning is only available for kimi-k2.5'}
             >
-              <span className={`model-status-dot ${currentModelHealthy ? 'is-green' : 'is-red'}`} />
-              <span className="model-menu-value">{currentModelLabel}</span>
-              <ChevronDown size={14} className={`model-menu-chevron ${modelMenuOpen ? 'is-open' : ''}`} />
+              <span className="reasoning-toggle-label">Reasoning</span>
+              <span className="reasoning-toggle-track">
+                <span className="reasoning-toggle-thumb" />
+              </span>
             </button>
-            {modelMenuOpen && (
-              <div className="model-menu-popover">
-                <button
-                  type="button"
-                  className={`model-menu-item ${generationModel === 'kimi-k2.5' ? 'is-active' : ''}`}
-                  onClick={() => {
-                    setGenerationModel('kimi-k2.5');
-                    setModelMenuOpen(false);
-                  }}
-                >
-                  <span className={`model-status-dot ${backendHealth === 'online' ? 'is-green' : 'is-red'}`} />
-                  <span>kimi-k2.5</span>
-                </button>
-                <button
-                  type="button"
-                  className={`model-menu-item ${generationModel === 'qwen3-32b' ? 'is-active' : ''}`}
-                  onClick={() => {
-                    setGenerationModel('qwen3-32b');
-                    setModelMenuOpen(false);
-                  }}
-                >
-                  <span className="model-status-dot is-green" />
-                  <span>Qwen3-32B</span>
-                </button>
-              </div>
-            )}
           </div>
         </div>
         <div className="input-wrapper">

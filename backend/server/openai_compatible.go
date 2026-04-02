@@ -22,6 +22,7 @@ type OpenAICompatibleLLM struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
+	thinking   *openAIThinkingConfig
 }
 
 type openAIMessage struct {
@@ -30,19 +31,26 @@ type openAIMessage struct {
 }
 
 type openAIRequest struct {
-	Model       string          `json:"model"`
-	Messages    []openAIMessage `json:"messages"`
-	Tools       []openAITool    `json:"tools,omitempty"`
-	ToolChoice  string          `json:"tool_choice,omitempty"`
-	Temperature *float32        `json:"temperature,omitempty"`
-	Stream      bool            `json:"stream"`
+	Model       string                `json:"model"`
+	Messages    []openAIMessage       `json:"messages"`
+	Tools       []openAITool          `json:"tools,omitempty"`
+	ToolChoice  string                `json:"tool_choice,omitempty"`
+	Temperature *float32              `json:"temperature,omitempty"`
+	MaxTokens   *int32                `json:"max_tokens,omitempty"`
+	Thinking    *openAIThinkingConfig `json:"thinking,omitempty"`
+	Stream      bool                  `json:"stream"`
+}
+
+type openAIThinkingConfig struct {
+	Type string `json:"type"`
 }
 
 type openAIResponse struct {
 	Choices []struct {
 		Message struct {
-			Content   string           `json:"content"`
-			ToolCalls []openAIToolCall `json:"tool_calls"`
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			ToolCalls        []openAIToolCall `json:"tool_calls"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -52,8 +60,9 @@ type openAIResponse struct {
 type openAIStreamResponse struct {
 	Choices []struct {
 		Delta struct {
-			Content   string              `json:"content"`
-			ToolCalls []openAIStreamToolCall `json:"tool_calls"`
+			Content          string                 `json:"content"`
+			ReasoningContent string                 `json:"reasoning_content"`
+			ToolCalls        []openAIStreamToolCall `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -78,9 +87,9 @@ type openAIToolCall struct {
 }
 
 type openAIStreamToolCall struct {
-	Index    int                   `json:"index"`
-	ID       string                `json:"id,omitempty"`
-	Type     string                `json:"type,omitempty"`
+	Index    int                      `json:"index"`
+	ID       string                   `json:"id,omitempty"`
+	Type     string                   `json:"type,omitempty"`
 	Function openAIStreamFunctionCall `json:"function"`
 }
 
@@ -144,7 +153,11 @@ func (m *OpenAICompatibleLLM) generate(ctx context.Context, req *model.LLMReques
 		return nil, fmt.Errorf("openai-compatible model returned no choices")
 	}
 
-	content := buildContentFromOpenAI(strings.TrimSpace(decoded.Choices[0].Message.Content), decoded.Choices[0].Message.ToolCalls)
+	content := buildContentFromOpenAI(
+		strings.TrimSpace(decoded.Choices[0].Message.Content),
+		strings.TrimSpace(decoded.Choices[0].Message.ReasoningContent),
+		decoded.Choices[0].Message.ToolCalls,
+	)
 	if content == nil || len(content.Parts) == 0 {
 		return nil, fmt.Errorf("openai-compatible model returned empty content")
 	}
@@ -177,6 +190,7 @@ func (m *OpenAICompatibleLLM) generateStream(
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var builder strings.Builder
+	var reasoningBuilder strings.Builder
 	modelVersion := m.name
 	toolCalls := map[int]*openAIToolCall{}
 
@@ -200,6 +214,18 @@ func (m *OpenAICompatibleLLM) generateStream(
 		}
 
 		for _, choice := range chunk.Choices {
+			reasoningDelta := choice.Delta.ReasoningContent
+			if reasoningDelta != "" {
+				reasoningBuilder.WriteString(reasoningDelta)
+				if !yield(&model.LLMResponse{
+					Content:      &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{{Text: reasoningDelta, Thought: true}}},
+					ModelVersion: modelVersion,
+					Partial:      true,
+					TurnComplete: false,
+				}, nil) {
+					return nil
+				}
+			}
 			delta := choice.Delta.Content
 			if delta != "" {
 				builder.WriteString(delta)
@@ -239,8 +265,9 @@ func (m *OpenAICompatibleLLM) generateStream(
 	}
 
 	finalText := strings.TrimSpace(builder.String())
+	finalReasoning := strings.TrimSpace(reasoningBuilder.String())
 	finalToolCalls := orderedToolCalls(toolCalls)
-	content := buildContentFromOpenAI(finalText, finalToolCalls)
+	content := buildContentFromOpenAI(finalText, finalReasoning, finalToolCalls)
 	if content == nil || len(content.Parts) == 0 {
 		return fmt.Errorf("openai-compatible model returned empty content")
 	}
@@ -270,12 +297,8 @@ func (m *OpenAICompatibleLLM) doChatCompletionRequest(ctx context.Context, req *
 		if content == nil {
 			continue
 		}
-		role := string(content.Role)
-		if role == "" {
-			role = "user"
-		}
 		chatMessages = append(chatMessages, openAIMessage{
-			Role:    role,
+			Role:    mapOpenAIRole(string(content.Role)),
 			Content: contentText(content),
 		})
 	}
@@ -284,6 +307,9 @@ func (m *OpenAICompatibleLLM) doChatCompletionRequest(ctx context.Context, req *
 		Model:    m.name,
 		Messages: chatMessages,
 		Stream:   stream,
+	}
+	if m.thinking != nil {
+		payload.Thinking = m.thinking
 	}
 	if req.Config != nil && len(req.Config.Tools) > 0 {
 		payload.Tools = toOpenAITools(req.Config.Tools)
@@ -294,6 +320,10 @@ func (m *OpenAICompatibleLLM) doChatCompletionRequest(ctx context.Context, req *
 	if req.Config != nil && req.Config.Temperature != nil {
 		temp := float32(*req.Config.Temperature)
 		payload.Temperature = &temp
+	}
+	if req.Config != nil && req.Config.MaxOutputTokens > 0 {
+		maxTokens := req.Config.MaxOutputTokens
+		payload.MaxTokens = &maxTokens
 	}
 
 	body, err := json.Marshal(payload)
@@ -341,6 +371,31 @@ func (m *OpenAICompatibleLLM) doChatCompletionRequest(ctx context.Context, req *
 	return nil, fmt.Errorf("openai-compatible request failed without a response")
 }
 
+func (m *OpenAICompatibleLLM) WithThinkingEnabled(enabled bool) *OpenAICompatibleLLM {
+	clone := *m
+	if enabled {
+		clone.thinking = nil
+	} else {
+		clone.thinking = &openAIThinkingConfig{Type: "disabled"}
+	}
+	return &clone
+}
+
+func mapOpenAIRole(role string) string {
+	switch strings.TrimSpace(strings.ToLower(role)) {
+	case "", "user":
+		return "user"
+	case "model", "assistant":
+		return "assistant"
+	case "tool", "function":
+		return "tool"
+	case "system":
+		return "system"
+	default:
+		return "user"
+	}
+}
+
 func toOpenAITools(tools []*genai.Tool) []openAITool {
 	var converted []openAITool
 	for _, tool := range tools {
@@ -368,14 +423,20 @@ func toOpenAITools(tools []*genai.Tool) []openAITool {
 	return converted
 }
 
-func buildContentFromOpenAI(text string, toolCalls []openAIToolCall) *genai.Content {
+func buildContentFromOpenAI(text string, reasoning string, toolCalls []openAIToolCall) *genai.Content {
 	cleanText := strings.TrimSpace(text)
 	resolvedCalls := toolCalls
 	if len(resolvedCalls) == 0 {
 		cleanText, resolvedCalls = extractToolCallsFromMarkup(cleanText)
 	}
 
-	parts := make([]*genai.Part, 0, 1+len(resolvedCalls))
+	parts := make([]*genai.Part, 0, 2+len(resolvedCalls))
+	if strings.TrimSpace(reasoning) != "" {
+		parts = append(parts, &genai.Part{
+			Text:    strings.TrimSpace(reasoning),
+			Thought: true,
+		})
+	}
 	if cleanText != "" {
 		parts = append(parts, genai.NewPartFromText(cleanText))
 	}
