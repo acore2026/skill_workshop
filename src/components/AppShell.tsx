@@ -3,7 +3,7 @@ import './AppShell.css';
 
 interface AppShellProps {
   header: React.ReactNode;
-  chatPanel: React.ReactNode;
+  chatPanel?: React.ReactNode;
   mainContent: React.ReactNode;
   sidePanel?: React.ReactNode;
 }
@@ -85,7 +85,7 @@ const AppShell: React.FC<AppShellProps> = ({ header, chatPanel, mainContent, sid
 
   return (
     <div
-      className={`workspace-shell ${chatCollapsed ? 'chat-collapsed' : ''}`}
+      className={`workspace-shell ${chatCollapsed ? 'chat-collapsed' : ''} ${!chatPanel ? 'no-chat' : ''}`}
       style={{
         ['--chat-panel-width' as string]: chatCollapsed ? '72px' : `${chatPanelWidth}px`,
         ['--side-panel-width' as string]: sidePanelCollapsed ? '56px' : `${sidePanelWidth}px`,
@@ -95,19 +95,23 @@ const AppShell: React.FC<AppShellProps> = ({ header, chatPanel, mainContent, sid
         {header}
       </header>
 
-      <main className="workspace-main">
-        <aside className={`workspace-chat-panel ${chatCollapsed ? 'is-collapsed' : ''}`}>
-          {chatPanel}
-        </aside>
-        <div
-          className={`workspace-chat-resizer ${chatCollapsed ? 'is-disabled' : ''}`}
-          onMouseDown={handleChatResizeStart}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize sidebar"
-        />
+      <main className="workspace-main" style={!chatPanel ? { gridTemplateColumns: `minmax(0, 1fr) ${sidePanel ? '6px var(--side-panel-width)' : ''}` } : {}}>
+        {chatPanel && (
+          <>
+            <aside className={`workspace-chat-panel ${chatCollapsed ? 'is-collapsed' : ''}`}>
+              {chatPanel}
+            </aside>
+            <div
+              className={`workspace-chat-resizer ${chatCollapsed ? 'is-disabled' : ''}`}
+              onMouseDown={handleChatResizeStart}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize sidebar"
+            />
+          </>
+        )}
 
-        <section className="workspace-center">
+        <section className="workspace-center" style={!chatPanel ? { gridColumn: '1' } : {}}>
           {mainContent}
         </section>
 
@@ -116,11 +120,12 @@ const AppShell: React.FC<AppShellProps> = ({ header, chatPanel, mainContent, sid
             <div
               className={`workspace-side-resizer ${sidePanelCollapsed ? 'is-disabled' : ''}`}
               onMouseDown={handleSideResizeStart}
+              style={!chatPanel ? { gridColumn: '2' } : {}}
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize side panel"
             />
-            <aside className="workspace-side-panel-rail">
+            <aside className="workspace-side-panel-rail" style={!chatPanel ? { gridColumn: '3' } : {}}>
               {sidePanel}
             </aside>
           </>

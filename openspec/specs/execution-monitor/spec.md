@@ -8,11 +8,11 @@ The application SHALL provide a dedicated route at `/execution` for monitoring s
 - **THEN** the Execution Monitor interface is displayed
 
 ### Requirement: Execution Monitor Layout
-The Execution Monitor interface SHALL include a layout framework for run history, a live execution view, and a step inspector.
+The Execution Monitor interface SHALL include a split-view layout containing LLM API Payloads, Simulated Network Traffic (PCAP), and a Packet Details view.
 
 #### Scenario: Visualizing Execution Framework
 - **WHEN** the Execution Monitor is rendered
-- **THEN** placeholders for Run History, Execution Flow, and Step Inspector are visible
+- **THEN** the LLM API Payloads, Simulated Network Traffic (PCAP), and Packet Details panels are visible
 
 ### Requirement: Non-persistent Execution State
 The execution framework SHALL support transient execution monitoring that is not persisted across page reloads in the initial implementation.
