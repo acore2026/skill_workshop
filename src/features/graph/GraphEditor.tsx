@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Search, Wrench, X } from 'lucide-react';
 import {
   Background,
   BackgroundVariant,
@@ -11,7 +12,7 @@ import {
 import type { Connection, Edge, EdgeMouseHandler, Node, NodeMouseHandler, NodeTypes, OnNodeDrag, ReactFlowInstance } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useStore } from '../../store/useStore';
-import type { NextActionPort, SkillNode } from '../../schemas/skill';
+import type { SkillNode, WorkflowOutput } from '../../schemas/skill';
 import SkillNodeComponent from './SkillNodeComponent';
 import './GraphEditor.css';
 
@@ -22,11 +23,8 @@ interface GraphNodeData {
   summary: string;
   badge?: string;
   tint?: string;
-  sbi?: SkillNode['sbi'];
-  inputs: SkillNode['inputs'];
-  outputs: SkillNode['outputs'];
-  nextActions: NextActionPort[];
-  properties: SkillNode['properties'];
+  toolName?: string;
+  flowOutputs: WorkflowOutput[];
   status?: string;
   onUpdateNode: (id: string, updates: Partial<SkillNode>) => void;
 }
@@ -48,8 +46,19 @@ const GraphCanvas: React.FC = () => {
     connectPorts,
     removeEdge,
     addCardOfType,
+    addToolStep,
+    toolCatalog,
+    loadToolCatalog,
   } = useStore();
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
+  const [toolDrawerOpen, setToolDrawerOpen] = useState(false);
+  const [toolQuery, setToolQuery] = useState('');
+
+  useEffect(() => {
+    if (toolCatalog.length === 0) {
+      void loadToolCatalog();
+    }
+  }, [toolCatalog.length, loadToolCatalog]);
 
   const initialNodes = useMemo(
     () =>
@@ -64,11 +73,8 @@ const GraphCanvas: React.FC = () => {
           summary: node.summary,
           badge: node.uiState.badge,
           tint: node.uiState.tint,
-          sbi: node.sbi,
-          inputs: node.inputs,
-          outputs: node.outputs,
-          nextActions: node.nextActions,
-          properties: node.properties,
+          toolName: typeof node.properties.tool_name === 'string' ? node.properties.tool_name : undefined,
+          flowOutputs: node.flowOutputs,
           status: document.execution.nodeStatuses[node.id],
           onUpdateNode: updateNode,
         } satisfies GraphNodeData,
@@ -78,18 +84,19 @@ const GraphCanvas: React.FC = () => {
 
   const initialEdges = useMemo(
     () =>
-      document?.edges.map((edge) => ({
+      document?.edges
+        .map((edge) => ({
         id: edge.id,
         source: edge.fromNodeId,
-        sourceHandle: handleId(edge.fromPortId, 'source'),
+        sourceHandle: handleId(edge.fromOutputId, 'source'),
         target: edge.toNodeId,
-        targetHandle: handleId(edge.toPortId, 'target'),
+        targetHandle: handleId(edge.toNodeId, 'target'),
         label: edge.label,
         animated: edge.style.animated,
         markerEnd: { type: MarkerType.ArrowClosed },
         style: {
           stroke: edge.style.stroke,
-          strokeWidth: edge.edgeType === 'next_action' ? 2.8 : 2.2,
+          strokeWidth: 2.8,
         },
         labelStyle: {
           fontSize: 11,
@@ -114,6 +121,18 @@ const GraphCanvas: React.FC = () => {
   useEffect(() => {
     flowInstance?.fitView({ padding: 0.18, duration: 300 });
   }, [fitViewVersion, flowInstance]);
+
+  const filteredTools = useMemo(() => {
+    const normalizedQuery = toolQuery.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return toolCatalog;
+    }
+    return toolCatalog.filter((tool) =>
+      tool.name.toLowerCase().includes(normalizedQuery) ||
+      tool.description.toLowerCase().includes(normalizedQuery) ||
+      tool.parameters.some((parameter) => parameter.name.toLowerCase().includes(normalizedQuery)),
+    );
+  }, [toolCatalog, toolQuery]);
 
   const onNodeDragStop: OnNodeDrag<Node> = useCallback((_, node) => {
     updateNode(node.id, { position: node.position });
@@ -145,21 +164,62 @@ const GraphCanvas: React.FC = () => {
           <div className="graph-editor-subtitle">{document.metadata.description}</div>
         </div>
         <div className="graph-editor-quick-add">
-          <button type="button" onClick={() => addCardOfType('action')}>+ Action</button>
+          <button type="button" onClick={() => setToolDrawerOpen((current) => !current)}>
+            <Wrench size={13} />
+            Tools
+          </button>
           <button type="button" onClick={() => addCardOfType('branch')}>+ Branch</button>
+          <button type="button" onClick={() => addCardOfType('loop')}>+ Loop</button>
           <button type="button" onClick={() => addCardOfType('parallel')}>+ Parallel</button>
-          <button type="button" onClick={() => addCardOfType('constant')}>+ Constant</button>
-          <button type="button" onClick={() => addCardOfType('user_container')}>+ User Container</button>
-          <button type="button" onClick={() => addCardOfType('device_container')}>+ Device Container</button>
-          <button type="button" onClick={() => addCardOfType('network_container')}>+ Network Container</button>
-          <button type="button" onClick={() => addCardOfType('app_container')}>+ App Container</button>
+          <button type="button" onClick={() => addCardOfType('success')}>+ Done</button>
+          <button type="button" onClick={() => addCardOfType('failure')}>+ Abort</button>
         </div>
         <div className="graph-editor-stats">
-          <span>{document.nodes.length} cards</span>
-          <span>{document.edges.length} links</span>
-          <span>{document.metadata.executionMode}</span>
+          <span>{document.nodes.length} steps</span>
+          <span>{document.edges.length} flow links</span>
+          <span>workflow editor</span>
         </div>
       </div>
+
+      {toolDrawerOpen ? (
+        <div className="graph-tool-drawer">
+          <div className="graph-tool-drawer-header">
+            <div>
+              <div className="graph-tool-drawer-title">Real Tools</div>
+              <div className="graph-tool-drawer-subtitle">Insert tool-bound steps into the workflow.</div>
+            </div>
+            <button type="button" className="graph-tool-drawer-close" onClick={() => setToolDrawerOpen(false)}>
+              <X size={14} />
+            </button>
+          </div>
+          <label className="graph-tool-search">
+            <Search size={14} />
+            <input value={toolQuery} onChange={(event) => setToolQuery(event.target.value)} placeholder="Search tools or parameters" />
+          </label>
+          <div className="graph-tool-list">
+            {filteredTools.map((tool) => (
+              <div key={tool.name} className="graph-tool-card">
+                <div className="graph-tool-card-title">{tool.name}</div>
+                <p>{tool.description}</p>
+                <div className="graph-tool-card-meta">
+                  <span>{tool.parameters.length} params</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addToolStep(tool.name);
+                      setToolDrawerOpen(false);
+                      setToolQuery('');
+                    }}
+                  >
+                    Add Step
+                  </button>
+                </div>
+              </div>
+            ))}
+            {filteredTools.length === 0 ? <div className="graph-tool-empty">No tools matched that search.</div> : null}
+          </div>
+        </div>
+      ) : null}
 
       <ReactFlow
         onInit={setFlowInstance}

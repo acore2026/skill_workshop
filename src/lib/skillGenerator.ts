@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import { applyPromptToDocument } from './graph';
-import type { SkillDocument } from '../schemas/skill';
+import { applyPromptToDocument } from './graph.ts';
+import type { SkillDocument } from '../schemas/skill.ts';
 
 export interface UpdateSkillOperation {
   type: 'replace_document';

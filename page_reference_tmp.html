@@ -1,0 +1,298 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Terminal, Network, ShieldCheck, Zap, 
+  Activity, Play, FileJson, ArrowRightLeft, X
+} from 'lucide-react';
+
+// --- SCENARIOS & MOCK DATA ---
+const SCENARIOS = {
+  acn: {
+    id: 'ACN',
+    label: 'ACN (Embodied Agent)',
+    intent: 'Connect my new embodied agent to a high-reliability subnet.',
+    tools: ['Subscription_tool', 'Create_Or_Update_Subnet_Context_tool', 'Issue_Access_Token_tool', 'Validate_Access_Token_tool', 'Create_Subnet_PDUSession_tool'],
+  }
+};
+
+// Generates fake Wireshark-style packet details
+const generateMockDetails = (src, dst, proto, info, method, path, isResponse) => {
+  const baseDetails = {
+    "Frame": "412 bytes on wire (3296 bits), 412 bytes captured (3296 bits)",
+    "Ethernet II": `Src: 02:42:ac:11:00:02, Dst: 02:42:ac:11:00:03`,
+    "Internet Protocol Version 4": `Src: 10.0.0.5 (${src}), Dst: 10.0.0.6 (${dst})`,
+    "Transmission Control Protocol": `Src Port: ${isResponse ? '80' : '48152'}, Dst Port: ${isResponse ? '48152' : '80'}, Seq: 1, Ack: 1`,
+  };
+
+  if (isResponse) {
+    return {
+      ...baseDetails,
+      "Hypertext Transfer Protocol 2": {
+        "Stream": "1",
+        "Header: :status": "200",
+        "Header: content-type": "application/json"
+      },
+      "JavaScript Object Notation (application/json)": {
+        "status": "success",
+        "cause": "REQUEST_ACCEPTED",
+        "timestamp": new Date().toISOString(),
+        "data": {
+          "authorized": true,
+          "contextId": "ctx_9921_xyz"
+        }
+      }
+    };
+  } else {
+    return {
+      ...baseDetails,
+      "Hypertext Transfer Protocol 2": {
+        "Stream": "1",
+        "Header: :method": method || "POST",
+        "Header: :path": path || "/api/v1/resource",
+        "Header: content-type": "application/json"
+      },
+      "JavaScript Object Notation (application/json)": {
+        "ueId": "SUCI_12345",
+        "servingNetwork": {
+          "mcc": "310",
+          "mnc": "410"
+        },
+        "sNssai": {
+          "sst": 1,
+          "sd": "000001"
+        },
+        "requestType": "INITIAL_REQUEST"
+      }
+    };
+  }
+};
+
+export default function App() {
+  const [input, setInput] = useState(SCENARIOS['acn'].intent);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  
+  // Data stores
+  const [aiPayloads, setAiPayloads] = useState([]);
+  const [packets, setPackets] = useState([]);
+  
+  // Selected packet for the detail view
+  const [selectedPacket, setSelectedPacket] = useState(null);
+
+  const payloadRef = useRef(null);
+  const pcapRef = useRef(null);
+  
+  // Auto-scroll logic
+  useEffect(() => { payloadRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiPayloads]);
+  useEffect(() => { pcapRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [packets]);
+
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // --- MAIN SIMULATION ENGINE ---
+  const runSimulation = async () => {
+    if (!input.trim() || isProcessing) return;
+    
+    setIsProcessing(true);
+    setAiPayloads([]);
+    setPackets([]);
+    setSelectedPacket(null);
+    setProgress(0);
+
+    // Helpers to populate view data
+    const addPayload = (role, content) => setAiPayloads(p => [...p, { id: Date.now()+Math.random(), role, content }]);
+    const addPacket = (src, dst, proto, info, details) => setPackets(p => [...p, { id: Date.now()+Math.random(), time: new Date().toLocaleTimeString(), src, dst, proto, info, details }]);
+
+    // 1. Init & Routing
+    addPayload('user', `Categorize intent: "${input}"\nAvailable Agents: Connection, Compute, Sense.`);
+    await sleep(800);
+    addPayload('assistant', `{\n  "routeTo": "ConnectionAgent",\n  "confidence": 0.98,\n  "intentClass": "ACN"\n}`);
+    await sleep(600);
+
+    // 2. Connection Agent Execution
+    const tools = SCENARIOS['acn'].tools;
+    for (let i = 0; i < tools.length; i++) {
+      const tool = tools[i];
+      
+      // AI Thinking
+      addPayload('user', `Current State: Step ${i}. Next action?`);
+      await sleep(600);
+      addPayload('assistant', `THOUGHT: Executing next step to fulfill intent.\nCALL: ${tool}`);
+      await sleep(300);
+
+      // Tool Execution (API)
+      let method = 'POST', path = '/api/v1/tool/execute', dest = 'Core';
+      if (tool.includes('Subscription')) { method = 'GET'; path = '/nudm-sdm/v2/sm-data'; dest = 'UDM'; }
+      if (tool.includes('Auth') || tool.includes('Validate')) { method = 'POST'; path = '/nausf-auth/v1/ue-auth'; dest = 'AUSF'; }
+      if (tool.includes('Context')) { method = 'PUT'; path = '/nsmf-pdusession/v1/sm-contexts'; dest = 'SMF'; }
+      if (tool.includes('PDUSession')) { method = 'POST'; path = '/nupf-oam/v1/datapath'; dest = 'UPF'; }
+
+      // Outgoing Request
+      const reqInfo = `${method} ${path}`;
+      const reqDetails = generateMockDetails('ConnAgent', dest, 'HTTP/2', reqInfo, method, path, false);
+      addPacket('ConnAgent', dest, 'HTTP/2', reqInfo, reqDetails);
+      await sleep(200);
+      
+      // Incoming Response
+      const resInfo = `200 OK (Application/JSON)`;
+      const resDetails = generateMockDetails(dest, 'ConnAgent', 'HTTP/2', resInfo, method, path, true);
+      addPacket(dest, 'ConnAgent', 'HTTP/2', resInfo, resDetails);
+      
+      setProgress(((i + 1) / tools.length) * 100);
+      await sleep(600);
+    }
+
+    setIsProcessing(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-800 font-sans flex flex-col">
+      
+      {/* GLOBAL HEADER */}
+      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+        <div className="flex items-center gap-3">
+          <Network className="w-6 h-6 text-blue-600" />
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">6G AI Core NOC</h1>
+          <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-500 rounded border border-slate-200 uppercase tracking-wider">Engineering View: Split-Brain</span>
+        </div>
+      </header>
+
+      {/* SHARED CONTROL BAR */}
+      <div className="bg-white border-b border-slate-200 px-6 py-3 flex gap-4 items-center shadow-sm z-0 relative">
+        <div className="flex-1 flex items-center gap-3">
+          <Terminal className="w-4 h-4 text-slate-400" />
+          <input 
+            type="text" 
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            disabled={isProcessing}
+            className="flex-1 bg-slate-50 border border-slate-200 rounded text-sm px-3 py-1.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
+            placeholder="Enter intent (e.g. Connect my embodied agent...)"
+          />
+        </div>
+        <button 
+          onClick={runSimulation}
+          disabled={isProcessing}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-1.5 rounded text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2 shadow-sm"
+        >
+          {isProcessing ? <Activity className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+          Execute Intent
+        </button>
+      </div>
+
+      {/* Progress Bar */}
+      {isProcessing && (
+        <div className="h-1 bg-slate-200 w-full">
+          <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${progress}%` }} />
+        </div>
+      )}
+
+      {/* MAIN CONTENT AREA */}
+      <main className="flex-1 overflow-hidden flex gap-4 p-4 bg-slate-100">
+        
+        {/* Left: AI Payloads */}
+        <div className="w-1/2 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col overflow-hidden">
+          <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center gap-2">
+            <FileJson className="w-4 h-4 text-slate-500" />
+            <h2 className="text-sm font-semibold text-slate-700">LLM API Payloads (JSON)</h2>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+            {aiPayloads.length === 0 && <div className="text-slate-400 text-sm italic">Waiting for AI inference...</div>}
+            {aiPayloads.map((p) => (
+              <div key={p.id} className={`border rounded-md overflow-hidden shadow-sm ${p.role === 'user' ? 'border-blue-200 bg-white' : 'border-purple-200 bg-purple-50/30'}`}>
+                <div className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider border-b ${p.role === 'user' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-purple-100 text-purple-700 border-purple-200'}`}>
+                  {p.role === 'user' ? 'Request Payload' : 'Response Payload'}
+                </div>
+                <pre className="p-3 text-[11px] font-mono text-slate-700 whitespace-pre-wrap">
+                  {p.content}
+                </pre>
+              </div>
+            ))}
+            <div ref={payloadRef} />
+          </div>
+        </div>
+
+        {/* Right: Simulated PCAP & Details */}
+        <div className="w-1/2 flex flex-col gap-4">
+          
+          {/* PCAP Table */}
+          <div className={`bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col overflow-hidden transition-all duration-300 ${selectedPacket ? 'h-1/2' : 'h-full'}`}>
+            <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ArrowRightLeft className="w-4 h-4 text-slate-500" />
+                <h2 className="text-sm font-semibold text-slate-700">Simulated Network Traffic (PCAP)</h2>
+              </div>
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Double-click row for details</span>
+            </div>
+            
+            {/* Table Header */}
+            <div className="grid grid-cols-12 gap-2 bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600 border-b border-slate-200 shrink-0">
+              <div className="col-span-2">Time</div>
+              <div className="col-span-2">Source</div>
+              <div className="col-span-2">Dest</div>
+              <div className="col-span-2">Proto</div>
+              <div className="col-span-4">Info</div>
+            </div>
+
+            {/* Table Body */}
+            <div className="flex-1 overflow-y-auto bg-white font-mono text-[11px] select-none">
+              {packets.length === 0 && <div className="p-4 text-slate-400 italic">Listening for signaling traffic...</div>}
+              {packets.map((pkt, i) => {
+                const isSelected = selectedPacket?.id === pkt.id;
+                return (
+                  <div 
+                    key={pkt.id} 
+                    onDoubleClick={() => setSelectedPacket(pkt)}
+                    className={`grid grid-cols-12 gap-2 px-3 py-1.5 border-b border-slate-100 cursor-pointer transition-colors ${
+                      isSelected 
+                        ? 'bg-blue-600 text-white' 
+                        : i % 2 === 0 ? 'bg-slate-50/50 hover:bg-blue-50 text-slate-800' : 'bg-white hover:bg-blue-50 text-slate-800'
+                    }`}
+                  >
+                    <div className={`col-span-2 ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>{pkt.time}</div>
+                    <div className={`col-span-2 font-semibold ${isSelected ? 'text-white' : 'text-blue-700'}`}>{pkt.src}</div>
+                    <div className={`col-span-2 font-semibold ${isSelected ? 'text-white' : 'text-emerald-700'}`}>{pkt.dst}</div>
+                    <div className={`col-span-2 ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>{pkt.proto}</div>
+                    <div className="col-span-4 truncate" title={pkt.info}>{pkt.info}</div>
+                  </div>
+                );
+              })}
+              <div ref={pcapRef} />
+            </div>
+          </div>
+
+          {/* Detailed Packet View (Shows only when double-clicked) */}
+          {selectedPacket && (
+            <div className="h-1/2 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col overflow-hidden animate-[slideUpFade_0.2s_ease-out]">
+              <div className="bg-[#f8f9fa] border-b border-slate-200 px-4 py-2 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-slate-500" />
+                  <h2 className="text-sm font-semibold text-slate-700">Packet Details: Frame {packets.findIndex(p => p.id === selectedPacket.id) + 1}</h2>
+                </div>
+                <button 
+                  onClick={() => setSelectedPacket(null)}
+                  className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 bg-white text-[11px] font-mono leading-relaxed space-y-2">
+                {Object.entries(selectedPacket.details).map(([layer, data], idx) => (
+                  <details key={idx} open className="group">
+                    <summary className="cursor-pointer font-bold text-slate-700 hover:text-blue-600 select-none flex items-center bg-slate-50 px-2 py-1 border border-slate-100 rounded">
+                      <span className="w-3 inline-block group-open:rotate-90 transition-transform">▸</span>
+                      {layer}
+                    </summary>
+                    <div className="pl-6 py-1 text-slate-600 whitespace-pre-wrap border-l border-slate-200 ml-1.5 mt-1">
+                      {typeof data === 'string' ? data : JSON.stringify(data, null, 2)}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </div>
+          )}
+
+        </div>
+      </main>
+
+    </div>
+  );
+}

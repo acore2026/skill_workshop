@@ -1,8 +1,7 @@
 import React from 'react';
-import { Plus, Trash2 } from 'lucide-react';
 import { Handle, Position } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
-import type { DataPort, NextActionPort, SkillNode } from '../../schemas/skill';
+import type { SkillNode, WorkflowOutput } from '../../schemas/skill';
 import './SkillNodeComponent.css';
 
 interface GraphNodeData {
@@ -12,57 +11,83 @@ interface GraphNodeData {
   summary: string;
   badge?: string;
   tint?: string;
-  sbi?: SkillNode['sbi'];
-  inputs: DataPort[];
-  outputs: DataPort[];
-  nextActions: NextActionPort[];
-  properties: SkillNode['properties'];
+  toolName?: string;
+  flowOutputs: WorkflowOutput[];
   status?: string;
   onUpdateNode: (id: string, updates: Partial<SkillNode>) => void;
 }
 
 const handleId = (portId: string, side: 'source' | 'target') => `${portId}::${side}`;
-const dataCardTypes = new Set<SkillNode['cardType']>([
-  'constant',
-  'user_container',
-  'device_container',
-  'network_container',
-  'app_container',
-]);
 const terminalCardTypes = new Set<SkillNode['cardType']>(['success', 'failure']);
 
-const DataLane: React.FC<{
-  title: string;
-  ports: DataPort[];
-  side: Position.Left | Position.Right;
-}> = ({ title, ports, side }) => (
-  <div className={`lane-block ${side === Position.Left ? 'left' : 'right'}`}>
-    <div className="lane-title">{title}</div>
-    <div className="lane-list">
-      {ports.length === 0 ? (
-        <div className="lane-empty">none</div>
+const formatFlowLabel = (label: string) => {
+  const normalized = label.trim().toLowerCase();
+  switch (normalized) {
+    case 'begin':
+      return 'Start Flow';
+    case 'next':
+      return 'Continue';
+    case 'continue':
+      return 'Continue';
+    case 'abort':
+      return 'Stop';
+    case 'done':
+      return 'Done';
+    case 'repeat':
+      return 'Try Again';
+    case 'match':
+      return 'Match Found';
+    case 'fallback':
+      return 'Fallback';
+    case 'join':
+      return 'Merge';
+    case 'lane-a':
+      return 'Lane A';
+    case 'lane-b':
+      return 'Lane B';
+    default:
+      return label
+        .split(/[-_\s]+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+  }
+};
+
+const WorkflowLane: React.FC<{ nodeId: string; cardType: SkillNode['cardType']; outputs: WorkflowOutput[]; terminal: boolean }> = ({
+  nodeId,
+  cardType,
+  outputs,
+  terminal,
+}) => (
+  <div className="next-lane">
+    <div className="next-list">
+      {cardType !== 'start' ? (
+        <Handle
+          id={handleId(nodeId, 'target')}
+          type="target"
+          position={Position.Left}
+          className="node-handle next-handle"
+          style={{ top: '50%', transform: 'translateY(-50%)' }}
+        />
+      ) : null}
+      {outputs.length === 0 ? (
+        <div className="lane-empty">No next step</div>
       ) : (
-        ports.map((port) => (
-          <div key={port.id} className="lane-row">
-            {side === Position.Left && (
-              <Handle
-                id={handleId(port.id, 'target')}
-                type="target"
-                position={Position.Left}
-                className="node-handle data-handle input-handle"
-                style={{ top: '50%', transform: 'translateY(-50%)' }}
-              />
-            )}
-            <div className="lane-copy">
-              <span className="lane-name">{port.name}</span>
-              <span className="lane-type">{port.dataType}</span>
+        outputs.map((output) => (
+          <div key={output.id} className="next-row">
+            <div className="next-copy">
+              <div className="next-kicker">Next Step</div>
+              <div className="next-label">{formatFlowLabel(output.label)}</div>
             </div>
-            {side === Position.Right && (
+            {terminal ? (
+              <span className="next-terminal">end</span>
+            ) : (
               <Handle
-                id={handleId(port.id, 'source')}
+                id={handleId(output.id, 'source')}
                 type="source"
                 position={Position.Right}
-                className="node-handle data-handle output-handle"
+                className="node-handle next-handle"
                 style={{ top: '50%', transform: 'translateY(-50%)' }}
               />
             )}
@@ -73,125 +98,8 @@ const DataLane: React.FC<{
   </div>
 );
 
-const AttributeEditor: React.FC<{ data: GraphNodeData }> = ({ data }) => {
-  const attributes = Object.entries(data.properties);
-
-  const syncAttributes = (entries: Array<[string, unknown]>) => {
-    const normalized = entries
-      .map(([key, value], index) => [key.trim() || `attribute_${index + 1}`, value] as [string, unknown])
-      .filter(([key]) => key.length > 0);
-
-    data.onUpdateNode(data.id, {
-      properties: Object.fromEntries(normalized),
-      outputs: normalized.map(([key, value], index) => ({
-        id: data.outputs[index]?.id ?? `${data.id}-output-${key.toLowerCase().replace(/\s+/g, '-')}`,
-        nodeId: data.id,
-        direction: 'output',
-        name: key,
-        dataType: typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : 'string',
-        required: false,
-        defaultValue: typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? value : String(value ?? ''),
-      })),
-    });
-  };
-
-  return (
-    <div className="card-inline-editor attribute-editor">
-      <div className="attribute-header">
-        <div className="lane-title">Attributes</div>
-        <button
-          type="button"
-          className="attribute-action-btn"
-          onClick={() => syncAttributes([...attributes, [`attribute_${attributes.length + 1}`, '']])}
-        >
-          <Plus size={12} />
-          Add
-        </button>
-      </div>
-
-      <div className="attribute-list">
-        {attributes.map(([key, value], index) => {
-          const port = data.outputs[index];
-          return (
-            <div key={`${key}-${index}`} className="attribute-row">
-              <input
-                value={key}
-                onChange={(event) => {
-                  const nextEntries = [...attributes];
-                  nextEntries[index] = [event.target.value, value];
-                  syncAttributes(nextEntries);
-                }}
-                placeholder="Attribute"
-                className="attribute-key-input"
-              />
-              <input
-                value={String(value ?? '')}
-                onChange={(event) => {
-                  const nextEntries = [...attributes];
-                  nextEntries[index] = [key, event.target.value];
-                  syncAttributes(nextEntries);
-                }}
-                placeholder="Value"
-              />
-              {port && (
-                <Handle
-                  id={handleId(port.id, 'source')}
-                  type="source"
-                  position={Position.Right}
-                  className="node-handle data-handle output-handle"
-                  style={{ top: '50%', transform: 'translateY(-50%)' }}
-                />
-              )}
-              <button
-                type="button"
-                className="attribute-icon-btn"
-                onClick={() => syncAttributes(attributes.filter((_, entryIndex) => entryIndex !== index))}
-                aria-label={`Delete ${key}`}
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
-const NextActionLane: React.FC<{ ports: NextActionPort[] }> = ({ ports }) => (
-  <div className="next-lane">
-    <div className="lane-title">Action Flow</div>
-    <div className="next-list">
-      {ports.map((port) => (
-        <div key={port.id} className="next-row">
-          <Handle
-            id={handleId(port.id, 'target')}
-            type="target"
-            position={Position.Left}
-            className="node-handle next-handle"
-            style={{ top: '50%', transform: 'translateY(-50%)' }}
-          />
-          <div className="next-label">{port.label}</div>
-          {port.mode === 'inout' ? (
-            <Handle
-              id={handleId(port.id, 'source')}
-              type="source"
-              position={Position.Right}
-              className="node-handle next-handle"
-              style={{ top: '50%', transform: 'translateY(-50%)' }}
-            />
-          ) : (
-            <span className="next-terminal">terminal</span>
-          )}
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
 const SkillNodeComponent: React.FC<NodeProps> = ({ data, selected }) => {
   const typedData = data as unknown as GraphNodeData;
-  const isDataCard = dataCardTypes.has(typedData.cardType);
   const isTerminalCard = terminalCardTypes.has(typedData.cardType);
 
   return (
@@ -206,28 +114,17 @@ const SkillNodeComponent: React.FC<NodeProps> = ({ data, selected }) => {
           <span className={`skill-node-status ${typedData.status ?? 'idle'}`}>{typedData.status ?? 'idle'}</span>
         </div>
       </div>
-      {typedData.sbi && (
-        <div className="skill-node-sbi">
-          <span>{typedData.sbi.service}</span>
-          <span>{typedData.sbi.method}</span>
-          <span>{typedData.sbi.operation}</span>
-        </div>
-      )}
 
-      {!isTerminalCard && (
-        <div className={`skill-node-body ${isDataCard ? 'data-only' : ''}`}>
-          {isDataCard ? null : (
-          <>
-            <DataLane title="Inputs" ports={typedData.inputs} side={Position.Left} />
-            <DataLane title="Outputs" ports={typedData.outputs} side={Position.Right} />
-          </>
-          )}
-        </div>
-      )}
+      <div className="skill-node-body">
+        {typedData.toolName ? (
+          <div className="skill-node-tool-name">
+            <span className="skill-node-tool-label">Tool</span>
+            <span className="skill-node-tool-value">{typedData.toolName}</span>
+          </div>
+        ) : null}
 
-      {isDataCard && <AttributeEditor data={typedData} />}
-
-      {!isDataCard && <NextActionLane ports={typedData.nextActions} />}
+        <WorkflowLane nodeId={typedData.id} cardType={typedData.cardType} outputs={typedData.flowOutputs} terminal={isTerminalCard} />
+      </div>
     </div>
   );
 };

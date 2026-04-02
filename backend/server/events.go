@@ -24,11 +24,13 @@ type ChatMessage struct {
 }
 
 type StartRunRequest struct {
-	Type             string         `json:"type"`
-	RunID            string         `json:"run_id"`
-	Messages         []ChatMessage  `json:"messages"`
-	CurrentSkillYAML string         `json:"current_skill_yaml"`
-	Context          map[string]any `json:"context"`
+	Type                 string         `json:"type"`
+	RunID                string         `json:"run_id"`
+	Messages             []ChatMessage  `json:"messages"`
+	CurrentSkillYAML     string         `json:"current_skill_yaml"`
+	CurrentSkillMarkdown string         `json:"current_skill_markdown"`
+	ReasoningEnabled     bool           `json:"reasoning_enabled"`
+	Context              map[string]any `json:"context"`
 }
 
 type ToolCallPayload struct {
