@@ -17,8 +17,8 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Workspace />} />
-        <Route path="/architecture" element={<ArchitecturePage />} />
+        <Route path="/" element={<ArchitecturePage />} />
+        <Route path="/workshop" element={<Workspace />} />
         <Route path="/execution" element={<ExecutionPage />} />
       </Routes>
       <SkillLibraryModal />
