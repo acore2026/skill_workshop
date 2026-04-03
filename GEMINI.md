@@ -1,4 +1,4 @@
-# GEMINI.md - Skill Workshop (neocore_2)
+# GEMINI.md - Skill Workshop (arch-prototype-big-screen)
 
 ## Project Overview
 The Skill Workshop is a development environment for designing and generating AI agent "skills." It combines a visual graph editor with an automated agent pipeline to produce structured Markdown skill documents.

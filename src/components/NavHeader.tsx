@@ -21,6 +21,9 @@ const NavHeader: React.FC = () => {
       </div>
 
       <nav className="toolbar-nav">
+        <NavLink to="/architecture" className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}>
+          Architecture
+        </NavLink>
         <NavLink to="/" className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`} end>
           Workshop
         </NavLink>

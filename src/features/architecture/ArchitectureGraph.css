@@ -1,0 +1,278 @@
+.arch-graph-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* Custom Node Styling */
+.arch-node {
+  padding: 12px;
+  border-radius: 10px;
+  background: white;
+  border: 2px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 100px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.arch-node:hover {
+  border-color: #3b82f6;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.arch-node.is-selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.arch-node-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Domain Label Styling (for parent nodes) */
+.arch-domain-label-container {
+  padding: 12px;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.arch-domain-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  opacity: 0.8;
+}
+
+.arch-node-ue .arch-node-icon { background: #fee2e2; color: #ef4444; }
+.arch-node-ran .arch-node-icon { background: #fef3c7; color: #f59e0b; }
+.arch-node-core .arch-node-icon { background: #dcfce7; color: #10b981; }
+.arch-node-dn .arch-node-icon { background: #f3e8ff; color: #a855f7; }
+.arch-node-agent .arch-node-icon { background: #dbeafe; color: #3b82f6; }
+.arch-node-app .arch-node-icon { background: #e0e7ff; color: #4338ca; }
+.arch-node-registry .arch-node-icon { background: #fff7ed; color: #c2410c; }
+.arch-node-gateway .arch-node-icon { background: #f1f5f9; color: #475569; }
+
+.arch-node-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #1e293b;
+  text-align: center;
+}
+
+/* Inspector Overlay */
+.arch-inspector {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 300px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.arch-inspector-header {
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.arch-inspector-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: #334155;
+}
+
+.arch-inspector-close {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.arch-inspector-close:hover {
+  background: #e2e8f0;
+  color: #64748b;
+}
+
+.arch-inspector-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.arch-inspector-desc {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #64748b;
+  margin: 0;
+}
+
+.arch-properties-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.625rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.arch-properties-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 12px;
+}
+
+.arch-prop-key {
+  font-size: 0.7rem;
+  color: #94a3b8;
+}
+
+.arch-prop-val {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #334155;
+  font-family: monospace;
+}
+
+/* Legend */
+.arch-legend {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(4px);
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  gap: 16px;
+  z-index: 5;
+}
+
+.arch-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.arch-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.arch-dot.ue { background: #ef4444; }
+.arch-dot.ran { background: #f59e0b; }
+.arch-dot.core { background: #10b981; }
+.arch-dot.agent { background: #3b82f6; }
+.arch-dot.app { background: #4338ca; }
+.arch-dot.registry { background: #c2410c; }
+
+/* Domain Grouping Containers */
+.arch-domain-group {
+  position: absolute;
+  border-radius: 16px;
+  border: 2px dashed #e2e8f0;
+  pointer-events: none;
+  z-index: 0;
+  background: rgba(248, 250, 252, 0.3);
+}
+
+.arch-domain-group.device {
+  width: 240px;
+  height: 200px;
+  left: 20px;
+  top: 300px;
+  background: rgba(255, 241, 242, 0.3);
+  border-color: #fecdd3;
+}
+
+.arch-domain-group.app {
+  width: 240px;
+  height: 200px;
+  left: 20px;
+  top: 20px;
+  background: rgba(238, 242, 255, 0.3);
+  border-color: #e0e7ff;
+}
+
+.arch-domain-group.network {
+  width: 950px;
+  height: 500px;
+  left: 280px;
+  top: 20px;
+  background: rgba(241, 245, 249, 0.3);
+  border-color: #cbd5e1;
+}
+
+/* Domain Markers (positioned relative to their groups) */
+.arch-domain-marker {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.arch-domain-marker.device { background: #fff1f2; color: #be123c; border: 1px solid #fecdd3; }
+.arch-domain-marker.app { background: #eef2ff; color: #3730a3; border: 1px solid #e0e7ff; }
+.arch-domain-marker.network { background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; }
+
+/* Edge and Label Styling */
+.react-flow__edge-path {
+  stroke-linecap: round;
+}
+
+.react-flow__edge-text {
+  font-size: 0.625rem;
+  font-weight: 700;
+  fill: #64748b;
+}
+
+.react-flow__edge-textbg {
+  fill: #f8fafc;
+  fill-opacity: 0.9;
+  rx: 4;
+  ry: 4;
+}
