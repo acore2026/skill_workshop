@@ -1,14 +1,14 @@
-import { MarkerType } from '@xyflow/react';
+import { MarkerType, type Node } from '@xyflow/react';
 
 export interface ArchitectureNodeData {
   label: string;
-  type: 'ue' | 'app' | 'agent' | 'core' | 'registry' | 'gateway' | 'domain';
+  type: 'ue' | 'app' | 'agent' | 'core' | 'registry' | 'gateway' | 'domain' | 'ran';
   domain?: 'Device' | 'Network' | 'App';
   description?: string;
   properties?: Record<string, string>;
 }
 
-export const ARCHITECTURE_NODES = [
+export const ARCHITECTURE_NODES: Node[] = [
   // --- DOMAIN GROUPS (Parent Nodes) ---
   {
     id: 'group-app',

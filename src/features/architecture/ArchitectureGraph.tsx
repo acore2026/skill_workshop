@@ -11,7 +11,7 @@ import {
 } from '@xyflow/react';
 import { 
   Cpu, Database, Router, Shield, 
-  Smartphone, Bot, Info, X, Globe, Layers, Layout
+  Smartphone, Bot, Info, X, Globe, Layout
 } from 'lucide-react';
 import { ARCHITECTURE_NODES, ARCHITECTURE_EDGES, type ArchitectureNodeData } from '../../lib/architectureData';
 import '@xyflow/react/dist/style.css';

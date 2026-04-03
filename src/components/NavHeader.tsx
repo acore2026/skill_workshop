@@ -16,15 +16,15 @@ const NavHeader: React.FC = () => {
           <Waypoints size={18} strokeWidth={2.1} />
         </div>
         <div>
-          <div className="brand-title">6G Core Skill Workbench</div>
+          <div className="brand-title">6G Agentic Core Big Screen</div>
         </div>
       </div>
 
       <nav className="toolbar-nav">
-        <NavLink to="/architecture" className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}>
+        <NavLink to="/" className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`} end>
           Architecture
         </NavLink>
-        <NavLink to="/" className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`} end>
+        <NavLink to="/workshop" className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}>
           Workshop
         </NavLink>
         <NavLink to="/execution" className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}>
