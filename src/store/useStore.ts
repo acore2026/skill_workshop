@@ -21,7 +21,7 @@ import {
   summarizeFunctionResponse,
   type ADKSessionEventPayload,
 } from '../lib/adkEvents.ts';
-import { requestToolCatalog, streamSkillGeneration, type ToolCatalogEntry } from '../lib/api.ts';
+import { requestToolCatalog, requestSkills, streamSkillGeneration, type ToolCatalogEntry, type Skill } from '../lib/api.ts';
 import { runSkillGenerator } from '../lib/skillGenerator.ts';
 import { markdownSkillToDocument, skillDocumentToMarkdown } from '../lib/skillMarkdown.ts';
 import type { CardType, SkillDocument, SkillEdge, SkillNode } from '../schemas/skill.ts';
@@ -60,6 +60,9 @@ interface AppState {
   rawSkillMarkdown: string;
   markdownError: string | null;
   toolCatalog: ToolCatalogEntry[];
+  skills: Skill[];
+  isLoadingSkills: boolean;
+  skillsError: string | null;
   generationModel: GenerationModel;
   reasoningEnabled: boolean;
   appState: StatusType;
@@ -69,6 +72,9 @@ interface AppState {
   utilityTab: UtilityTab;
   fitViewVersion: number;
   messages: ChatMessage[];
+  isSkillLibraryOpen: boolean;
+  selectedSkillId: string | null;
+  matchedSkillId: string | null;
   setDocument: (doc: SkillDocument | null) => void;
   setGenerationModel: (model: GenerationModel) => void;
   setReasoningEnabled: (enabled: boolean) => void;
@@ -88,7 +94,11 @@ interface AppState {
   selectEdge: (id: string | null) => void;
   setSidebarTab: (tab: SidebarTab) => void;
   setUtilityTab: (tab: UtilityTab) => void;
+  setSkillLibraryOpen: (isOpen: boolean) => void;
+  setSelectedSkillId: (id: string | null) => void;
+  setMatchedSkillId: (id: string | null) => void;
   loadToolCatalog: () => Promise<void>;
+  loadSkills: () => Promise<void>;
   addMessage: (message: ChatMessage) => void;
   ensureMessage: (message: ChatMessage) => void;
   appendMessageContent: (id: string, chunk: string, timestamp?: string) => void;
@@ -206,6 +216,9 @@ export const useStore = create<AppState>((set, get) => ({
   rawSkillMarkdown: '',
   markdownError: null,
   toolCatalog: [],
+  skills: [],
+  isLoadingSkills: false,
+  skillsError: null,
   generationModel: 'kimi-k2.5',
   reasoningEnabled: true,
   appState: 'idle',
@@ -215,6 +228,9 @@ export const useStore = create<AppState>((set, get) => ({
   utilityTab: 'log',
   fitViewVersion: 0,
   messages: [],
+  isSkillLibraryOpen: false,
+  selectedSkillId: null,
+  matchedSkillId: null,
 
   setDocument: (doc) => set((state) => ({
     ...withMarkdownState(layoutLoadedDocument(doc)),
@@ -279,7 +295,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   loadToolCatalog: async () => {
     try {
-      const catalog = await requestToolCatalog();
+      const [catalog] = await Promise.all([
+        requestToolCatalog(),
+        get().loadSkills(),
+      ]);
       set({ toolCatalog: catalog.tools, markdownError: null });
     } catch (error) {
       set({
@@ -287,6 +306,23 @@ export const useStore = create<AppState>((set, get) => ({
       });
     }
   },
+
+  loadSkills: async () => {
+    set({ isLoadingSkills: true, skillsError: null });
+    try {
+      const response = await requestSkills();
+      set({ skills: response.skills, isLoadingSkills: false });
+    } catch (error) {
+      set({
+        skillsError: error instanceof Error ? error.message : 'Failed to load skill library.',
+        isLoadingSkills: false,
+      });
+    }
+  },
+
+  setSkillLibraryOpen: (isSkillLibraryOpen) => set({ isSkillLibraryOpen }),
+  setSelectedSkillId: (selectedSkillId) => set({ selectedSkillId }),
+  setMatchedSkillId: (matchedSkillId) => set({ matchedSkillId }),
 
   runMockExecution: () => {
     const current = get().document;

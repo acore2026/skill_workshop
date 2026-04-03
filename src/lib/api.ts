@@ -27,6 +27,17 @@ export interface ToolCatalogResponse {
   by_name: Record<string, ToolCatalogEntry>;
 }
 
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  definition: string;
+}
+
+export interface SkillsResponse {
+  skills: Skill[];
+}
+
 export interface BackendStreamEvent {
   type:
     | 'run_started'
@@ -49,7 +60,7 @@ const resolveApiBaseUrl = () => {
     return configuredBaseUrl.replace(/\/$/, '');
   }
 
-  const configuredPort = getEnv('VITE_API_PORT') ?? '8082';
+  const configuredPort = getEnv('VITE_API_PORT') ?? '8080';
 
   if (typeof window !== 'undefined') {
     const { protocol, hostname } = window.location;
@@ -166,4 +177,16 @@ export const requestToolCatalog = async () => {
   }
 
   return data as ToolCatalogResponse;
+};
+
+export const requestSkills = async () => {
+  const response = await fetch(`${apiBaseUrl}/skills`);
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+
+  if (!response.ok) {
+    throw new Error(data?.error ?? 'Skills library request failed.');
+  }
+
+  return data as SkillsResponse;
 };
