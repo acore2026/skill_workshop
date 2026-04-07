@@ -8,10 +8,11 @@ import {
   Position,
   useNodesState,
   useEdgesState,
+  type Node,
 } from '@xyflow/react';
 import { 
   Cpu, Database, Router, Shield, 
-  Smartphone, Bot, Info, X, Globe, Layout
+  Smartphone, Bot, Info, X, Globe, Layout, Glasses
 } from 'lucide-react';
 import { ARCHITECTURE_NODES, ARCHITECTURE_EDGES, type ArchitectureNodeData } from '../../lib/architectureData';
 import '@xyflow/react/dist/style.css';
@@ -19,9 +20,15 @@ import './ArchitectureGraph.css';
 
 // --- CUSTOM NODE COMPONENT ---
 
-const NodeIcon: React.FC<{ type: ArchitectureNodeData['type'] }> = ({ type }) => {
+const NodeIcon: React.FC<{ type: ArchitectureNodeData['type']; label?: string }> = ({ type, label = '' }) => {
+  const labelLower = label.toLowerCase();
+  
   switch (type) {
-    case 'ue': return <Smartphone size={18} />;
+    case 'ue': 
+      if (labelLower.includes('phone')) return <Smartphone size={18} />;
+      if (labelLower.includes('robot')) return <Bot size={18} />;
+      if (labelLower.includes('glasses')) return <Glasses size={18} />;
+      return <Smartphone size={18} />;
     case 'app': return <Layout size={18} />;
     case 'ran': return <Router size={18} />;
     case 'core': return <Cpu size={18} />;
@@ -51,7 +58,7 @@ const ArchitectureNode: React.FC<{ data: ArchitectureNodeData; selected?: boolea
       <Handle type="target" position={Position.Left} style={{ visibility: 'hidden' }} />
       <Handle type="target" position={Position.Top} style={{ visibility: 'hidden' }} />
       <div className="arch-node-icon">
-        <NodeIcon type={data.type} />
+        <NodeIcon type={data.type} label={data.label} />
       </div>
       <div className="arch-node-label">{data.label}</div>
       <Handle type="source" position={Position.Right} style={{ visibility: 'hidden' }} />
@@ -71,8 +78,8 @@ const ArchitectureGraph: React.FC = () => {
   const [edges, , onEdgesChange] = useEdgesState(ARCHITECTURE_EDGES);
   const [selectedNode, setSelectedNode] = useState<ArchitectureNodeData | null>(null);
 
-  const onNodeClick = (_: any, node: any) => {
-    setSelectedNode(node.data);
+  const onNodeClick = (_: React.MouseEvent, node: Node) => {
+    setSelectedNode(node.data as ArchitectureNodeData);
   };
 
   const onPaneClick = () => {
@@ -107,7 +114,7 @@ const ArchitectureGraph: React.FC = () => {
         <div className="arch-inspector">
           <div className="arch-inspector-header">
             <div className="arch-inspector-title">
-              <NodeIcon type={selectedNode.type} />
+              <NodeIcon type={selectedNode.type} label={selectedNode.label} />
               <span>{selectedNode.label}</span>
             </div>
             <button onClick={() => setSelectedNode(null)} className="arch-inspector-close">

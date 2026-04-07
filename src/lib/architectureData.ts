@@ -21,30 +21,58 @@ export const ARCHITECTURE_NODES: Node[] = [
     id: 'group-device',
     type: 'architectureNode',
     position: { x: 20, y: 300 },
-    style: { width: 260, height: 220, backgroundColor: 'rgba(255, 241, 242, 0.4)', border: '2px dashed #fecdd3', borderRadius: '16px' },
+    style: { width: 260, height: 340, backgroundColor: 'rgba(255, 241, 242, 0.4)', border: '2px dashed #fecdd3', borderRadius: '16px' },
     data: { label: 'DEVICE DOMAIN', type: 'domain' },
   },
   {
     id: 'group-network',
     type: 'architectureNode',
     position: { x: 320, y: 20 },
-    style: { width: 950, height: 500, backgroundColor: 'rgba(241, 245, 249, 0.4)', border: '2px dashed #cbd5e1', borderRadius: '16px' },
+    style: { width: 950, height: 620, backgroundColor: 'rgba(241, 245, 249, 0.4)', border: '2px dashed #cbd5e1', borderRadius: '16px' },
     data: { label: 'NETWORK DOMAIN', type: 'domain' },
   },
 
   // --- DEVICE DOMAIN NODES ---
   {
-    id: 'ue',
+    id: 'ue-phone',
     parentId: 'group-device',
     type: 'architectureNode',
-    position: { x: 40, y: 80 },
+    position: { x: 80, y: 40 },
     extent: 'parent',
     data: { 
-      label: 'UE (Phone/Robot/Glasses)', 
+      label: 'Phone', 
       type: 'ue',
       domain: 'Device',
-      description: 'End-user devices requiring 6G connectivity and intelligent services.',
-      properties: { 'ID': 'SUCI_9921', 'Status': 'Active' }
+      description: 'Standard smartphone with 6G capabilities.',
+      properties: { 'ID': 'SUCI_P001', 'Status': 'Active' }
+    },
+  },
+  {
+    id: 'ue-robot',
+    parentId: 'group-device',
+    type: 'architectureNode',
+    position: { x: 80, y: 140 },
+    extent: 'parent',
+    data: { 
+      label: 'Robot', 
+      type: 'ue',
+      domain: 'Device',
+      description: 'Autonomous robotic system for industrial or service use.',
+      properties: { 'ID': 'SUCI_R001', 'Status': 'Idle' }
+    },
+  },
+  {
+    id: 'ue-glasses',
+    parentId: 'group-device',
+    type: 'architectureNode',
+    position: { x: 80, y: 240 },
+    extent: 'parent',
+    data: { 
+      label: 'Glasses', 
+      type: 'ue',
+      domain: 'Device',
+      description: 'AR/VR glasses for immersive experiences.',
+      properties: { 'ID': 'SUCI_G001', 'Status': 'Connected' }
     },
   },
 
@@ -185,7 +213,9 @@ export const ARCHITECTURE_EDGES = [
   { id: 'e-nef-sa', source: 'nef', target: 'system-agent', animated: true },
 
   // UE -> SystemAgent via SRF
-  { id: 'e-ue-srf', source: 'ue', target: 'srf' },
+  { id: 'e-phone-srf', source: 'ue-phone', target: 'srf' },
+  { id: 'e-robot-srf', source: 'ue-robot', target: 'srf' },
+  { id: 'e-glasses-srf', source: 'ue-glasses', target: 'srf' },
   { id: 'e-srf-sa', source: 'srf', target: 'system-agent', animated: true },
 
   // SystemAgent -> Specialized Agents
