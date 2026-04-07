@@ -46,7 +46,7 @@ export interface BackendStreamEvent {
     | 'run_error';
   run_id: string;
   timestamp: string;
-  payload?: Record<string, unknown>;
+  data?: Record<string, unknown>;
 }
 
 const getEnv = (key: string) => {
@@ -129,8 +129,8 @@ export const streamSkillGeneration = (
       }
 
       if (event.type === 'run_error') {
-        const detail = typeof event.payload?.detail === 'string' ? event.payload.detail : null;
-        const errorMessage = typeof event.payload?.message === 'string' ? event.payload.message : 'Agent run failed.';
+        const detail = typeof event.data?.detail === 'string' ? event.data.detail : null;
+        const errorMessage = typeof event.data?.message === 'string' ? event.data.message : 'Agent run failed.';
         finish(() => {
           socket.close();
           reject(new Error(detail ? `${errorMessage} ${detail}` : errorMessage));

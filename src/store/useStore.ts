@@ -463,7 +463,7 @@ export const useStore = create<AppState>((set, get) => ({
         },
       }, (event) => {
         if (event.type === 'session_event') {
-          const payload = (event.payload ?? {}) as ADKSessionEventPayload;
+          const payload = (event.data ?? {}) as ADKSessionEventPayload;
           const rawText = typeof payload.text === 'string' ? payload.text : '';
           const rawContent = payload.text ? payload.text.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, '') : '';
           const rawThought = payload.thought ? payload.thought.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, '') : '';
