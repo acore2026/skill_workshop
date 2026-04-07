@@ -13,10 +13,8 @@ import {
 } from '../lib/graph.ts';
 import {
   extractFunctionCallsFromMarkup,
-  getADKDisplayText,
   getADKMessageId,
   getADKStage,
-  getADKThoughtText,
   getSkillInstallFromFunctionCall,
   summarizeFunctionResponse,
   type ADKSessionEventPayload,
@@ -467,8 +465,8 @@ export const useStore = create<AppState>((set, get) => ({
         if (event.type === 'session_event') {
           const payload = (event.payload ?? {}) as ADKSessionEventPayload;
           const rawText = typeof payload.text === 'string' ? payload.text : '';
-          const rawContent = getADKDisplayText(payload);
-          const rawThought = getADKThoughtText(payload);
+          const rawContent = payload.text ? payload.text.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, '') : '';
+          const rawThought = payload.thought ? payload.thought.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, '') : '';
           const messageId = getADKMessageId(payload);
           const stage = getADKStage(payload);
           const isPartial = Boolean(payload.partial);
@@ -597,7 +595,8 @@ export const useStore = create<AppState>((set, get) => ({
             }
           }
 
-          const markdownFromState = typeof payload.state_delta?.skill_markdown === 'string' ? payload.state_delta.skill_markdown : '';
+          const stateDelta = payload.state_delta ?? {};
+          const markdownFromState = (stateDelta['workshop.skill_markdown'] ?? stateDelta['skill_markdown']) as string ?? '';
           if (markdownFromState.trim() && (stage === 'checker' || isFinal)) {
             markdownApplied = applyMarkdownArtifact(
               set,

@@ -31,8 +31,8 @@ interface Packet {
     path?: string;
     status?: number;
     toolName?: string;
-    payload?: any;
-    [key: string]: any;
+    payload?: unknown;
+    [key: string]: unknown;
   };
 }
 
@@ -40,7 +40,7 @@ type WebSocketMessageType = 'ai_payload' | 'llm_thought' | 'network_pcap' | 'wor
 
 interface WebSocketMessage {
   type: WebSocketMessageType;
-  data: any;
+  data: unknown;
 }
 
 const ExecutionPage: React.FC = () => {
@@ -212,7 +212,7 @@ const ExecutionPage: React.FC = () => {
       setIsProcessing(false);
     };
 
-    socket.onclose = (_event) => {
+    socket.onclose = () => {
       setIsProcessing(false);
     };
   };
