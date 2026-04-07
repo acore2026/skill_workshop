@@ -315,7 +315,7 @@ export const markdownSkillToDocument = (markdown: string, toolCatalog: ToolCatal
   const nodes: SkillNode[] = [];
   const edges: SkillEdge[] = [];
   let currentSource: { node: SkillNode; outputLabel: string } | null = null;
-  let y = 140;
+  const y = 140;
 
   for (const step of parsedSkill.workflow) {
     if (typeof step.call === 'string' && step.call.trim()) {
