@@ -192,7 +192,8 @@ const ExecutionPage: React.FC = () => {
       socketRef.current.close();
     }
 
-    const socket = new WebSocket('ws://localhost:8080/v1/intents/stream');
+    const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL ?? `ws://localhost:${import.meta.env.VITE_API_PORT ?? '8080'}/ws`;
+    const socket = new WebSocket(`${wsBaseUrl}/agent-run`);
     socketRef.current = socket;
 
     socket.onopen = () => {
