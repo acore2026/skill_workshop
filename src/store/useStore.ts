@@ -595,7 +595,7 @@ export const useStore = create<AppState>((set, get) => ({
             }
           }
 
-          const stateDelta = payload.state_delta ?? {};
+          const stateDelta = (payload.state_delta ?? payload.data ?? {}) as Record<string, unknown>;
           const markdownFromState = (stateDelta['workshop.skill_markdown'] ?? stateDelta['skill_markdown']) as string ?? '';
           if (markdownFromState.trim() && (stage === 'checker' || isFinal)) {
             markdownApplied = applyMarkdownArtifact(
