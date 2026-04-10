@@ -16,10 +16,10 @@ interface WorkflowYaml {
 const frontMatterPattern = /^---\n([\s\S]*?)\n---\n?/;
 const workflowBlockPattern = /## Workflow\s+```yaml\s*([\s\S]*?)```/i;
 const workflowCodeBlockPattern = /## Workflow[\s\S]*?```(?:python|py)?\s*([\s\S]*?)```/i;
-const overviewPattern = /## Overview\s+([\s\S]*?)(?=\n##\s)/i;
-const toolInventoryPattern = /## Tool Inventory\s+([\s\S]*?)(?=\n##\s)/i;
-const criticalRulesPattern = /## Critical Rules\s+([\s\S]*?)(?=\n##\s)/i;
-const outputFormatPattern = /## Output Format\s+(?:```[\w-]*\s*([\s\S]*?)```|([\s\S]*?)(?=\n##\s|$))/i;
+const overviewPattern = /## Overview\s+([\s\S]*?)(?=\n##\b|$)/i;
+const toolInventoryPattern = /## Tool Inventory\s+([\s\S]*?)(?=\n##\b|$)/i;
+const criticalRulesPattern = /## Critical Rules\s+([\s\S]*?)(?=\n##\b|$)/i;
+const outputFormatPattern = /## Output Format\s+(?:```[\w-]*\s*([\s\S]*?)```|([\s\S]*?)(?=\n##\b|$))/i;
 
 const createFlowOutput = (nodeId: string, label: string) => ({
   id: `${nodeId}-flow-${label.toLowerCase().replace(/\s+/g, '-')}`,
@@ -212,40 +212,46 @@ const parseWorkflow = (markdown: string) => {
 };
 
 export const parseMarkdownSkillDocument = (markdown: string): MarkdownSkillDocument => {
-  const frontMatter = parseFrontMatter(markdown);
-  const workflow = parseWorkflow(markdown);
-  const overview = markdown.match(overviewPattern)?.[1]?.trim() || frontMatter.description;
-  const toolInventory = (markdown.match(toolInventoryPattern)?.[1] ?? '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith('- '))
-    .map((line) => {
-      const match = line.match(/^- `([^`]+)` — (.+)$/);
-      return {
-        name: match?.[1] ?? line.replace(/^- /, ''),
-        description: match?.[2] ?? '',
-      };
-    });
-  const criticalRules = (markdown.match(criticalRulesPattern)?.[1] ?? '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith('- '))
-    .map((line) => line.replace(/^- /, ''));
-  const outputFormatMatch = markdown.match(outputFormatPattern);
-  const outputFormat = (outputFormatMatch?.[1] ?? outputFormatMatch?.[2] ?? '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+  try {
+    const frontMatter = parseFrontMatter(markdown);
+    const workflow = parseWorkflow(markdown);
+    const overview = markdown.match(overviewPattern)?.[1]?.trim() || frontMatter.description;
+    const toolInventory = (markdown.match(toolInventoryPattern)?.[1] ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('- '))
+      .map((line) => {
+        const match = line.match(/^- `([^`]+)` — (.+)$/);
+        return {
+          name: match?.[1] ?? line.replace(/^- /, ''),
+          description: match?.[2] ?? '',
+        };
+      });
+    const criticalRules = (markdown.match(criticalRulesPattern)?.[1] ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('- '))
+      .map((line) => line.replace(/^- /, ''));
+    const outputFormatMatch = markdown.match(outputFormatPattern);
+    const outputFormat = (outputFormatMatch?.[1] ?? outputFormatMatch?.[2] ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.replace(/^- /, ''));
 
-  return MarkdownSkillDocumentSchema.parse({
-    frontMatter,
-    overview,
-    toolInventory,
-    workflow,
-    criticalRules,
-    outputFormat,
-    raw: markdown,
-  });
+    return MarkdownSkillDocumentSchema.parse({
+      frontMatter,
+      overview,
+      toolInventory,
+      workflow,
+      criticalRules,
+      outputFormat,
+      raw: markdown,
+    });
+  } catch (error) {
+    console.error('[MarkdownParser] Failed to parse skill document:', error);
+    throw error;
+  }
 };
 
 export const skillDocumentToMarkdown = (document: SkillDocument | null) => {
@@ -305,45 +311,50 @@ ${outputFormat}
 };
 
 export const markdownSkillToDocument = (markdown: string, toolCatalog: ToolCatalogEntry[]): SkillDocument => {
-  const parsedSkill = parseMarkdownSkillDocument(markdown);
-  const document = createEmptyWorkflowDocument();
-  const startNode = getStartNode(document);
-  document.name = parsedSkill.frontMatter.name;
-  document.metadata.description = parsedSkill.frontMatter.description;
-  document.metadata.sourceDocument = 'ACN_SKILL.md';
+  try {
+    const parsedSkill = parseMarkdownSkillDocument(markdown);
+    const document = createEmptyWorkflowDocument();
+    const startNode = getStartNode(document);
+    document.name = parsedSkill.frontMatter.name;
+    document.metadata.description = parsedSkill.frontMatter.description;
+    document.metadata.sourceDocument = 'ACN_SKILL.md';
 
-  const nodes: SkillNode[] = [];
-  const edges: SkillEdge[] = [];
-  let currentSource: { node: SkillNode; outputLabel: string } | null = null;
-  const y = 140;
+    const nodes: SkillNode[] = [];
+    const edges: SkillEdge[] = [];
+    let currentSource: { node: SkillNode; outputLabel: string } | null = null;
+    const y = 140;
 
-  for (const step of parsedSkill.workflow) {
-    if (typeof step.call === 'string' && step.call.trim()) {
-      const toolName = step.call.trim();
-      const tool = toolCatalog.find((entry) => entry.name === toolName);
-      const node = tool
-        ? createToolStepNode(tool, { x: 180 + nodes.length * 220, y })
-        : createControlNode('action', toolName, 'Imported workflow action step.', { x: 180 + nodes.length * 220, y }, ['next']);
-      nodes.push(node);
-      if (currentSource) {
-        edges.push(connectFlow(currentSource.node, currentSource.outputLabel, node));
-      } else if (startNode) {
-        edges.push(connectFlow(startNode, 'begin', node, 'begin'));
+    for (const step of parsedSkill.workflow) {
+      if (typeof step.call === 'string' && step.call.trim()) {
+        const toolName = step.call.trim();
+        const tool = toolCatalog.find((entry) => entry.name === toolName);
+        const node = tool
+          ? createToolStepNode(tool, { x: 180 + nodes.length * 220, y })
+          : createControlNode('action', toolName, 'Imported workflow action step.', { x: 180 + nodes.length * 220, y }, ['next']);
+        nodes.push(node);
+        if (currentSource) {
+          edges.push(connectFlow(currentSource.node, currentSource.outputLabel, node));
+        } else if (startNode) {
+          edges.push(connectFlow(startNode, 'begin', node, 'begin'));
+        }
+        currentSource = { node, outputLabel: 'next' };
+        continue;
       }
-      currentSource = { node, outputLabel: 'next' };
-      continue;
+
+      if (typeof step.done === 'string' && step.done.trim() && currentSource) {
+        const success = createControlNode('success', step.done.trim(), 'Workflow completed successfully.', { x: 180 + nodes.length * 220, y }, []);
+        nodes.push(success);
+        edges.push(connectFlow(currentSource.node, currentSource.outputLabel, success));
+        currentSource = { node: success, outputLabel: 'complete' };
+      }
     }
 
-    if (typeof step.done === 'string' && step.done.trim() && currentSource) {
-      const success = createControlNode('success', step.done.trim(), 'Workflow completed successfully.', { x: 180 + nodes.length * 220, y }, []);
-      nodes.push(success);
-      edges.push(connectFlow(currentSource.node, currentSource.outputLabel, success));
-      currentSource = { node: success, outputLabel: 'complete' };
-    }
+    document.nodes = startNode ? [startNode, ...nodes] : nodes;
+    document.edges = edges;
+    document.updatedAt = new Date().toISOString();
+    return document;
+  } catch (error) {
+    console.error('[MarkdownToDocument] Conversion failed:', error);
+    throw error;
   }
-
-  document.nodes = startNode ? [startNode, ...nodes] : nodes;
-  document.edges = edges;
-  document.updatedAt = new Date().toISOString();
-  return document;
 };

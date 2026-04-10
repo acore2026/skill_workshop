@@ -196,6 +196,7 @@ const applyMarkdownArtifact = (
     }));
     return true;
   } catch (error) {
+    console.error('[Store] Failed to apply markdown artifact:', error);
     set((state) => ({
       ...withMarkdownState(
         state.document ? appendTimeline(state.document, 'Preserved the current workflow because markdown import failed.', 'warning') : state.document,
@@ -596,7 +597,12 @@ export const useStore = create<AppState>((set, get) => ({
           }
 
           const stateDelta = (payload.state_delta ?? payload.data ?? {}) as Record<string, unknown>;
-          const markdownFromState = (stateDelta['workshop.skill_markdown'] ?? stateDelta['skill_markdown']) as string ?? '';
+          let markdownFromState = (stateDelta['workshop.skill_markdown'] ?? stateDelta['skill_markdown']) as string ?? '';
+          
+          if (!markdownFromState.trim() && isFinal && rawText.startsWith('---')) {
+            markdownFromState = rawText;
+          }
+
           if (markdownFromState.trim() && (stage === 'checker' || isFinal)) {
             markdownApplied = applyMarkdownArtifact(
               set,
