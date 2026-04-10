@@ -23,6 +23,7 @@ export interface ADKSessionEventPayload {
   thought?: string;
   function_calls?: ADKFunctionCall[];
   function_responses?: ADKFunctionResponse[];
+  data?: Record<string, unknown>;
   state_delta?: Record<string, unknown>;
   long_running_tool_ids?: string[];
 }
