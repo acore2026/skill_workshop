@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { 
   Terminal, ShieldCheck, 
   Activity, Play, FileJson, ArrowRightLeft, X, BookOpen
@@ -85,7 +86,7 @@ const ExecutionPage: React.FC = () => {
           setAiPayloads(prev => {
             // 1. User roles always start a new block
             if (role === 'user') {
-              return [...prev, { id: crypto.randomUUID(), agent, role, content }];
+              return [...prev, { id: uuidv4(), agent, role, content }];
             }
 
             // 2. For assistant, check if the absolute last message is an update target
@@ -108,7 +109,7 @@ const ExecutionPage: React.FC = () => {
 
             // 3. Otherwise, it's a new message (or interleaved by a packet)
             return [...prev, {
-              id: crypto.randomUUID(),
+              id: uuidv4(),
               agent,
               role,
               content
@@ -135,7 +136,7 @@ const ExecutionPage: React.FC = () => {
 
             // New block for new thought stream
             return [...prev, {
-              id: crypto.randomUUID(),
+              id: uuidv4(),
               agent,
               role: 'assistant',
               content: chunk,
